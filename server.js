@@ -268,10 +268,23 @@ app.post('/login', async (req, res) => {
     appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
 
     res.redirect('/');
-  } catch (e) {
-    return res.status(500).render('login', { error: 'Ошибка БД: ' + (e.message || e), title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
-  }
-});
+   
+} catch (e) {
+  console.error('DB login error:', e);
+
+  const details =
+    (e?.errors && Array.isArray(e.errors)
+      ? e.errors.map(x => x.message).join(' | ')
+      : null) ||
+    e?.message ||
+    String(e);
+
+  return res.status(500).render('login', {
+    error: 'Ошибка БД: ' + details,
+    title: 'Вход • Parking Git',
+    bodyClass: 'theme-premium page-login'
+  });
+}
 
 app.get('/logout', (req, res) => {
   appendAudit(req, 'logout', 'user', req.session.userId, null);
