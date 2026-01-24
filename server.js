@@ -4,6 +4,8 @@ const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
 const axios = require('axios');
+const { pool } = require('./db');
+
 
 const app = express();
 
@@ -87,26 +89,15 @@ function devicePointLabel(device, deviceId) {
   return `${kind}: ${name}`;
 }
 
-function appendTransitEvent({ point, event, source, result, session }) {
+async function appendTransitEvent({ point, event, source, result, session }) {
   try {
-    const { transit } = loadAll();
-    transit.push({
-      datetime: new Date().toISOString(),
-      point,
-      event,
-      source: source || null,
-      result,
-      session: session || null
-    });
-    // keep last 10000
-    if (transit.length > 10000) transit.splice(0, transit.length - 10000);
-    writeJson(TRANSIT_FILE, transit);
-  } catch (e) {
-    // ignore transit log errors
-  }
+    await pool.query(
+      `INSERT INTO public.transit_events(datetime, point, event, source, result, session)
+       VALUES (NOW(), $1, $2, $3, $4, $5)`,
+      [point, event, source || null, result || null, session || null]
+    );
+  } catch (e) {}
 }
-
-
 
 function getTransitFilterOptions(transitList) {
   const points = new Set();
@@ -181,27 +172,28 @@ function sendCsv(res, filename, rows) {
   res.send('\ufeff' + csv);
 }
 
-function appendAudit(req, action, targetType, targetId, details) {
+async function appendAudit(req, action, targetType, targetId, details) {
   try {
-    const { users, audit } = loadAll();
+    const { users } = loadAll(); // временно, пока users ещё в json
     const actor = users[req.session?.userId] || null;
-    audit.push({
-      ts: new Date().toISOString(),
-      actorId: req.session?.userId || null,
-      actorPhone: actor?.phone || null,
-      actorFio: actor?.fio || null,
-      action,
-      targetType,
-      targetId,
-      details: String(details).replace(/[^\d]/g,'') || null,
-      ip: req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket?.remoteAddress || null,
-      ua: req.headers['user-agent'] || null
-    });
-    // keep last 5000
-    if (audit.length > 5000) audit.splice(0, audit.length - 5000);
-    writeJson(AUDIT_FILE, audit);
+
+    await pool.query(
+      `INSERT INTO public.audit(ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua)
+       VALUES (NOW(), $1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        req.session?.userId || null,
+        actor?.phone || null,
+        actor?.fio || null,
+        action,
+        targetType,
+        targetId,
+        String(details ?? '').replace(/[^\d]/g,'') || null,
+        req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket?.remoteAddress || null,
+        req.headers['user-agent'] || null
+      ]
+    );
   } catch (e) {
-    // ignore audit errors
+    console.error('Audit error:', e.message);
   }
 }
 
@@ -243,27 +235,42 @@ app.get('/login', (req, res) => {
   res.render('login', { error: null, title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
 });
 
-app.post('/login', (req, res) => {
-  const { users } = loadAll();
+app.post('/login', async (req, res) => {
   const { phone, pin } = req.body;
+  const phoneDigits = String(phone || '').replace(/\D/g, '');
 
-  const userId = findUserIdByPhone(users, phone);
-  if (!userId) return res.status(401).render('login', { error: 'Телефон не найден', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
+  try {
+    const r = await pool.query(
+      `SELECT id, fio, phone, role, status, pin
+       FROM public.users
+       WHERE regexp_replace(phone, '\\D', '', 'g') = $1
+       LIMIT 1`,
+      [phoneDigits]
+    );
 
-  const u = users[userId];
-  if (u.status && u.status !== 'active') {
-    return res.status(403).render('login', { error: 'Пользователь не активен', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
+    const u = r.rows[0];
+    if (!u) {
+      return res.status(401).render('login', { error: 'Телефон не найден', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
+    }
+
+    if (u.status && u.status !== 'active') {
+      return res.status(403).render('login', { error: 'Пользователь не активен', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
+    }
+
+    const pinExpected = String(u.pin || '').trim() || (phoneDigits.length >= 4 ? phoneDigits.slice(-4) : '');
+    if (String(pin || '').trim() !== pinExpected) {
+      return res.status(401).render('login', { error: 'Неверный PIN', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
+    }
+
+    req.session.userId = u.id;
+
+    // audit login (теперь appendAudit у тебя лучше тоже сделать async и писать в БД)
+    appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
+
+    res.redirect('/');
+  } catch (e) {
+    return res.status(500).render('login', { error: 'Ошибка БД: ' + (e.message || e), title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
   }
-
-  const expected = userPin(u);
-  if (String(pin || '').trim() !== expected) {
-    return res.status(401).render('login', { error: 'Неверный PIN', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
-  }
-
-  req.session.userId = userId;
-  // audit login
-  appendAudit(req, 'login', 'user', userId, { phone: u.phone });
-  res.redirect('/');
 });
 
 app.get('/logout', (req, res) => {
@@ -309,7 +316,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
 
   try {
     await openDevice(device);
-appendTransitEvent({
+await appendTransitEvent({
   point: devicePointLabel(device, deviceId),
   event: 'Открытие',
   source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
@@ -318,7 +325,7 @@ appendTransitEvent({
 });
 res.json({ ok: true });
   } catch (e) {
-    appendTransitEvent({
+    await appendTransitEvent({
   point: devicePointLabel(device, deviceId),
   event: 'Ошибка',
   source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
