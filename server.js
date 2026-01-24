@@ -283,9 +283,9 @@ app.post('/login', async (req, res) => {
     error: 'Ошибка БД: ' + details,
     title: 'Вход • Parking Git',
     bodyClass: 'theme-premium page-login'
-  });
-}
-
+   });
+ }
+}); 
 app.get('/logout', (req, res) => {
   appendAudit(req, 'logout', 'user', req.session.userId, null);
   req.session.destroy(() => res.redirect('/login'));
