@@ -1,0 +1,89 @@
+<%- include('partials/header', { title: 'Админ • Устройства', user, bodyClass }) %>
+
+<div class="page-head">
+  <div>
+    <div class="text-muted small">Админ-панель</div>
+    <h1 class="h4 mb-0">Устройства</h1>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/users">Пользователи</a>
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/audit">Журнал</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="fw-semibold mb-1">Добавить / обновить устройство</div>
+    <div class="text-muted small mb-3">Если ID уже существует — запись будет обновлена.</div>
+
+    <form method="post" action="/admin/devices/new" class="row g-2">
+      <div class="col-md-2">
+        <label class="form-label">ID *</label>
+        <input class="form-control" name="id" placeholder="door4" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Название *</label>
+        <input class="form-control" name="name" placeholder="Дверь 4" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Зона *</label>
+        <select class="form-select" name="zone" required>
+          <% Object.entries(zones || {}).forEach(([zid, z]) => { %>
+            <option value="<%= zid %>"><%= z.title || zid %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">Метод</label>
+        <select class="form-select" name="method">
+          <option value="GET">GET</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">URL *</label>
+        <input class="form-control" name="url" placeholder="http://192.168.1.10/relay?..." required>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th style="min-width:160px">ID</th>
+          <th style="min-width:220px">Название</th>
+          <th>Зона</th>
+          <th style="min-width:360px">URL</th>
+          <th style="width:180px">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% Object.entries(devices).forEach(([id, d]) => { %>
+          <tr>
+            <td><code><%= id %></code></td>
+            <td class="fw-semibold"><%= d.name || '' %></td>
+            <td class="small">
+              <span class="badge text-bg-light border"><%= zones[d.zone]?.title || d.zone %></span>
+            </td>
+            <td class="small text-muted">
+              <span class="text-truncate d-inline-block" style="max-width:520px; vertical-align:middle;"><%= d.url || '' %></span>
+            </td>
+            <td>
+              <form method="post" action="/admin/devices/<%= id %>/delete" class="d-inline" onsubmit="return confirm('Удалить устройство?');">
+                <button class="btn btn-sm btn-outline-danger">Удалить</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

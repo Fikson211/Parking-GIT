@@ -1,0 +1,18 @@
+{
+  "name": "skud-webapp",
+  "version": "1.0.0",
+  "description": "Web UI для управления устройствами (RODOS/Raspberry) из проекта Telegram-бота",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "express-session": "^1.17.3"
+  }
+}

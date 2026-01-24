@@ -1,0 +1,15 @@
+
+/* Light premium background without watermark, brand Parking GIT */
+
+/* Background only */
+body{
+  background:
+    radial-gradient(900px 600px at 10% 10%, rgba(212,175,55,0.12), transparent 55%),
+    radial-gradient(800px 500px at 90% 20%, rgba(212,175,55,0.08), transparent 60%),
+    linear-gradient(135deg,#f7f7f7,#ededed,#f3f3f3);
+}
+
+/* Brand name replacement */
+.brand-name::after{
+  content:"Parking GIT";
+}

@@ -1,0 +1,206 @@
+<%- include('partials/header', { title: 'Админ • Пользователи', user, bodyClass }) %>
+
+<div class="page-head">
+  <div>
+    <div class="text-muted small">Админ-панель</div>
+    <h1 class="h4 mb-0">Пользователи</h1>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/devices">Устройства</a>
+    <a class="btn btn-sm btn-outline-secondary" href="/admin/audit">Журнал</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+      <div>
+        <div class="fw-semibold mb-1">Добавить пользователя</div>
+        <div class="text-muted small">Логин: телефон + PIN. Если PIN не задан — по умолчанию последние 4 цифры телефона.</div>
+      </div>
+    </div>
+
+    <form method="post" action="/admin/users/new" class="row g-2 mt-2">
+      <div class="col-md-4">
+        <label class="form-label">ФИО</label>
+        <input class="form-control" name="fio" placeholder="Иванов Иван" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Телефон *</label>
+        <input class="form-control" name="phone" placeholder="+7 999 000-00-00" required autocomplete="off">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Роль</label>
+        <select class="form-select" name="role">
+          <% Object.entries(roles || {}).forEach(([k,v]) => { %>
+            <option value="<%= k %>"><%= v.name || k %></option>
+          <% }) %>
+          <% if (!roles || !Object.keys(roles).length) { %>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          <% } %>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Статус</label>
+        <select class="form-select" name="status">
+          <option value="active">active</option>
+          <option value="pending">pending</option>
+          <option value="blocked">blocked</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">PIN</label>
+        <input class="form-control" name="pin" placeholder="1234" autocomplete="off">
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Зоны доступа</label>
+        <div class="zone-grid">
+          <% Object.entries(zones || {}).forEach(([zid, z]) => { %>
+            <label class="zone-pill">
+              <input type="checkbox" class="form-check-input me-2" name="zones" value="<%= zid %>">
+              <span><%= z.title || zid %></span>
+            </label>
+          <% }) %>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary">Добавить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="d-flex align-items-center justify-content-between mb-2 gap-2 flex-wrap">
+  <div class="fw-semibold">Список пользователей</div>
+  <input id="userSearch" class="form-control form-control-sm" style="max-width:360px" placeholder="Поиск: ФИО / телефон / роль / зона">
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="usersTable">
+      <thead class="table-light">
+        <tr>
+          <th style="min-width:240px">Пользователь</th>
+          <th>Телефон</th>
+          <th>Роль</th>
+          <th>Статус</th>
+          <th style="min-width:260px">Зоны</th>
+          <th style="width:260px">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+      <% Object.entries(users).forEach(([id,u]) => { %>
+        <tr data-search="<%= (u.fio||'') + ' ' + (u.phone||'') + ' ' + (u.role||'') + ' ' + (u.status||'') + ' ' + ((u.zones||[]).join(' ')) %>">
+          <td>
+            <div class="fw-semibold"><%= u.fio || 'Без имени' %></div>
+            <div class="text-muted small">ID: <%= id %></div>
+          </td>
+          <td><code><%= u.phone || '' %></code></td>
+          <td><span class="badge text-bg-light border"><%= u.role || '' %></span></td>
+          <td>
+            <% const st = (u.status || 'active'); %>
+            <span class="badge <%= st==='active' ? 'text-bg-success' : (st==='blocked' ? 'text-bg-danger' : 'text-bg-warning') %>"><%= st %></span>
+          </td>
+          <td class="small">
+            <% (u.zones||[]).forEach(zid => { %>
+              <span class="badge text-bg-light border me-1 mb-1"><%= (zones[zid]?.title || zid) %></span>
+            <% }) %>
+            <% if (!(u.zones||[]).length) { %><span class="text-muted">—</span><% } %>
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#edit_<%= id %>">Редактировать</button>
+            <form method="post" action="/admin/users/<%= id %>/delete" class="d-inline" onsubmit="return confirm('Удалить пользователя?');">
+              <button class="btn btn-sm btn-outline-danger">Удалить</button>
+            </form>
+          </td>
+        </tr>
+
+        <tr class="collapse-row">
+          <td colspan="6" class="p-0 border-top-0">
+            <div id="edit_<%= id %>" class="collapse">
+              <div class="p-3 bg-body-tertiary">
+                <form method="post" action="/admin/users/<%= id %>" class="row g-2">
+                  <div class="col-md-4">
+                    <label class="form-label">ФИО</label>
+                    <input class="form-control" name="fio" value="<%= u.fio || '' %>">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Телефон</label>
+                    <input class="form-control" name="phone" value="<%= u.phone || '' %>">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label">Роль</label>
+                    <select class="form-select" name="role">
+                      <% const roleKeys = Object.keys(roles||{}); %>
+                      <% if (roleKeys.length) { %>
+                        <% roleKeys.forEach(r => { %>
+                          <option value="<%= r %>" <%= (u.role===r?'selected':'') %>><%= roles[r].name || r %></option>
+                        <% }) %>
+                      <% } else { %>
+                        <% ['admin','user'].forEach(r => { %>
+                          <option value="<%= r %>" <%= (u.role===r?'selected':'') %>><%= r %></option>
+                        <% }) %>
+                      <% } %>
+                    </select>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label">Статус</label>
+                    <select class="form-select" name="status">
+                      <% ['active','pending','blocked'].forEach(s => { %>
+                        <option value="<%= s %>" <%= (st===s?'selected':'') %>><%= s %></option>
+                      <% }) %>
+                    </select>
+                  </div>
+                  <div class="col-md-1">
+                    <label class="form-label">PIN</label>
+                    <input class="form-control" name="pin" placeholder="(не менять)" autocomplete="off">
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Зоны доступа</label>
+                    <div class="zone-grid">
+                      <% Object.entries(zones || {}).forEach(([zid, z]) => { %>
+                        <label class="zone-pill">
+                          <input type="checkbox" class="form-check-input me-2" name="zones" value="<%= zid %>" <%= (u.zones||[]).includes(zid) ? 'checked' : '' %>>
+                          <span><%= z.title || zid %></span>
+                        </label>
+                      <% }) %>
+                    </div>
+                  </div>
+
+                  <div class="col-12">
+                    <button class="btn btn-primary">Сохранить</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const search = document.getElementById('userSearch');
+  const rows = Array.from(document.querySelectorAll('#usersTable tbody tr'))
+    .filter(r => r.dataset && r.dataset.search);
+
+  function applyFilter(){
+    const q = (search.value || '').toLowerCase().trim();
+    rows.forEach(r => {
+      const ok = !q || (r.dataset.search || '').toLowerCase().includes(q);
+      r.style.display = ok ? '' : 'none';
+      // also hide corresponding collapse row
+      const next = r.nextElementSibling;
+      if (next && next.classList.contains('collapse-row')) next.style.display = ok ? '' : 'none';
+    });
+  }
+  search.addEventListener('input', applyFilter);
+</script>
+
+<%- include('partials/footer') %>

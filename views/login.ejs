@@ -1,0 +1,30 @@
+<%- include('partials/header', { title: 'Вход', user: null, bodyClass }) %>
+
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-3">Вход</h1>
+        <p class="text-muted small mb-3">PIN по умолчанию — последние 4 цифры телефона (если админ не задал PIN).</p>
+
+        <% if (error) { %>
+          <div class="alert alert-danger py-2"><%= error %></div>
+        <% } %>
+
+        <form method="post" action="/login" class="vstack gap-2">
+          <div>
+            <label class="form-label">Телефон</label>
+            <input class="form-control" name="phone" placeholder="79990001122" required>
+          </div>
+          <div>
+            <label class="form-label">PIN</label>
+            <input class="form-control" name="pin" placeholder="1234" required>
+          </div>
+          <button class="btn btn-primary w-100 mt-2">Войти</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

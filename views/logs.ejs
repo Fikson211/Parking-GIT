@@ -1,0 +1,105 @@
+<%- include('partials/header', { title, user, bodyClass }) %>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h5 m-0"><%= title %></h1>
+  <div class="text-muted small">показано: <%= logs.length %></div>
+</div>
+
+
+<script>
+  function qs(obj){
+    const p = new URLSearchParams();
+    Object.entries(obj).forEach(([k,v])=>{ if(v) p.set(k,v); });
+    const s = p.toString();
+    return s ? ('?' + s) : '';
+  }
+</script>
+
+<div class="card glass mb-3">
+  <div class="card-body">
+    <form class="row g-2 align-items-end" method="GET" action="">
+      <div class="col-12 col-md-3">
+        <label class="form-label small text-muted">Точка</label>
+        <select class="form-select" name="point">
+          <option value="">Все</option>
+          <% (options?.points || []).forEach(p => { %>
+            <option value="<%= p %>" <%= (filters?.point === p ? 'selected' : '') %>><%= p %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-3">
+        <label class="form-label small text-muted">Событие</label>
+        <select class="form-select" name="event">
+          <option value="">Все</option>
+          <% (options?.events || []).forEach(ev => { %>
+            <option value="<%= ev %>" <%= (filters?.event === ev ? 'selected' : '') %>><%= ev %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted">Дата с</label>
+        <input class="form-control" type="date" name="date_from" value="<%= (filters?.date_from || '') %>">
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted">Дата по</label>
+        <input class="form-control" type="date" name="date_to" value="<%= (filters?.date_to || '') %>">
+      </div>
+
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button class="btn btn-primary w-100" type="submit">Фильтр</button>
+        <a class="btn btn-outline-secondary w-100" href="<%= (exportUrlBase || '/logs.csv') + qs(filters || {}) %>">CSV</a>
+      </div>
+
+      <div class="col-12">
+        <a class="small text-muted" href="<%= (typeof window === 'undefined' ? '' : '') %>"> </a>
+        <a class="small link-light" href="?">Сбросить фильтры</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th style="white-space:nowrap">Дата/время</th>
+            <th>Точка</th>
+            <th>Событие</th>
+            <th>Пользователь/источник</th>
+            <th>Результат</th>
+            <th style="white-space:nowrap">Номер сессии</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% logs.forEach(l => { %>
+            <tr>
+              <td style="white-space:nowrap"><%= (l.datetime ? new Date(l.datetime).toLocaleString('ru-RU') : '-') %></td>
+              <td><%= l.point || '-' %></td>
+              <td><span class="badge rounded-pill text-bg-secondary"><%= l.event || '-' %></span></td>
+              <td class="text-muted"><%= l.source || '-' %></td>
+              <td>
+                <% if (String(l.result || '').toLowerCase().startsWith('ошибка')) { %>
+                  <span class="badge text-bg-danger">Ошибка</span>
+                  <span class="ms-2"><%= l.result %></span>
+                <% } else { %>
+                  <span class="badge text-bg-success">Успешно</span>
+                  <span class="ms-2"><%= l.result || 'Успешно' %></span>
+                <% } %>
+              </td>
+              <td class="text-muted" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                <%= l.session || '-' %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
