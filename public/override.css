@@ -1,0 +1,118 @@
+/* Parking GIT – Readability & Mobile Journals Override
+   Put AFTER main app.css. Strong selectors + !important to beat old styles.
+*/
+
+:root{
+  --pg-text: #111827;
+  --pg-muted: #4b5563;
+  --pg-bg-card: rgba(255,255,255,.92);
+  --pg-border: rgba(17,24,39,.10);
+}
+
+/* Make any table text readable (audit/transit/devices/users) */
+table, .table{
+  color: var(--pg-text) !important;
+}
+
+.table td, .table th,
+table td, table th{
+  color: var(--pg-text) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+.table td *, table td *{
+  color: inherit !important;
+  opacity: 1 !important;
+}
+
+/* Common “muted” helpers (were too pale on white) */
+.text-muted, .small.text-muted, .muted, .hint{
+  color: var(--pg-muted) !important;
+  opacity: 1 !important;
+}
+
+/* White cards look “premium” and keep contrast */
+.card, .panel, .content-card, .box, .filters-box{
+  background: var(--pg-bg-card) !important;
+  border: 1px solid var(--pg-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 14px 30px rgba(0,0,0,.10) !important;
+}
+
+/* Tables inside cards */
+.card .table, .panel .table, .content-card .table{
+  background: transparent !important;
+}
+
+/* Table header */
+.table thead th, table thead th{
+  background: rgba(249,250,251,.95) !important;
+  color: #0b1220 !important;
+  font-weight: 800 !important;
+}
+
+/* Table row separation */
+.table tbody tr, table tbody tr{
+  border-bottom: 1px solid rgba(17,24,39,.08) !important;
+}
+
+.table tbody tr:hover, table tbody tr:hover{
+  background: rgba(17,24,39,.03) !important;
+}
+
+/* Badges readability */
+.badge, .pill{
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* Make long values not break layout */
+td, th{
+  word-break: break-word;
+}
+.mono, .audit-ip, .audit-session{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* === Mobile: journals and admin tables === */
+.table-responsive, .table-wrap, .table-scroll{
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px){
+  /* Prevent side overflow */
+  body{ overflow-x: hidden; }
+
+  /* All buttons/inputs fit screen */
+  button, .btn, a.btn{
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Filters into one column */
+  .filters, .filters-box, .filter-row, form .row{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Tables: allow scroll instead of squish */
+  .table{
+    min-width: 760px !important;
+  }
+
+  /* Header nav wraps nicely */
+  .nav, .nav-right, .top-actions{
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* Cards padding for phone */
+  .card, .panel, .content-card, .box, .filters-box{
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+}
