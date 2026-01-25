@@ -310,3 +310,65 @@ html, body{ -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: graysc
     font-size: 14px;
   }
 }
+
+/* ===== Premium glass cards + Mobile journals ===== */
+
+/* Карточки и блоки делаем "как фон", а не белыми */
+.card, .panel, .box, .content-card, .table-wrap, .filters-box, .white-card {
+  background: rgba(17, 24, 39, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #f3f4f6 !important;
+}
+
+/* Любой текст внутри карточек/таблиц — читаемый */
+.card *, .panel *, .box *, .content-card *, .table-wrap * {
+  color: #f3f4f6 !important;
+}
+
+.text-muted, .small.text-muted {
+  color: rgba(243, 244, 246, 0.75) !important;
+}
+
+/* Таблицы: чтобы не ломались на телефоне */
+.table-responsive, .table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  min-width: 720px; /* чтобы колонки не слипались */
+}
+
+/* Длинные значения (session/url) */
+td, th {
+  word-break: break-word;
+}
+
+/* Фильтры и кнопки на мобиле */
+@media (max-width: 768px) {
+  .filters, .filters-box, .filter-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  button, .btn, a.btn {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .nav, .nav-right, .top-actions {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+}
+
+/* Чтобы белые формы (input/select) не резали глаз */
+input, select, textarea {
+  background: rgba(255,255,255,0.92) !important;
+  color: #111827 !important;
+}
