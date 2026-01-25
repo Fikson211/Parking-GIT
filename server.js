@@ -89,6 +89,62 @@ function devicePointLabel(device, deviceId) {
   return `${kind}: ${name}`;
 }
 
+// ------------------- PostgreSQL helpers -------------------
+async function dbGetUserById(id) {
+  const r = await pool.query(
+    `SELECT id, fio, phone, role, status, pin, COALESCE(zones, ARRAY[]::text[]) AS zones
+     FROM public.users
+     WHERE id = $1
+     LIMIT 1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+async function dbGetDeviceById(id) {
+  const r = await pool.query(
+    `SELECT id, name, zone, type, method, url
+     FROM public.devices
+     WHERE id = $1
+     LIMIT 1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+async function dbGetZonesMap() {
+  const r = await pool.query(`SELECT id, title FROM public.zones`);
+  const map = {};
+  for (const z of r.rows) map[z.id] = { title: z.title };
+  return map;
+}
+
+async function dbGetDevicesMap() {
+  const r = await pool.query(`SELECT id, name, zone, type, method, url FROM public.devices`);
+  const map = {};
+  for (const d of r.rows) map[d.id] = {
+    name: d.name,
+    zone: d.zone,
+    type: d.type,
+    method: d.method || 'GET',
+    url: d.url
+  };
+  return map;
+}
+
+async function dbFetchTransitEvents(limit = 2000) {
+  const r = await pool.query(
+    `SELECT datetime, point, event, source, result, session
+     FROM public.transit_events
+     ORDER BY datetime DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return r.rows || [];
+}
+// ------------------- /PostgreSQL helpers -------------------
+
+
 async function appendTransitEvent({ point, event, source, result, session }) {
   try {
     await pool.query(
@@ -207,14 +263,26 @@ async function openDevice(device) {
   throw new Error('Неизвестный метод устройства: ' + device.method);
 }
 
-function authRequired(req, res, next) {
-  if (!req.session.userId) return res.redirect('/login');
-  next();
+async function authRequired(req, res, next) {
+  try {
+    if (!req.session?.userId) return res.redirect('/login');
+
+    const user = await dbGetUserById(req.session.userId);
+    if (!user || (user.status && user.status !== 'active')) {
+      req.session.destroy(() => res.redirect('/login'));
+      return;
+    }
+
+    req.user = user;
+    next();
+  } catch (e) {
+    console.error('authRequired error:', e);
+    res.status(500).send('Server error');
+  }
 }
 
 function adminRequired(req, res, next) {
-  const { users } = loadAll();
-  const u = users[req.session.userId];
+  const u = req.user;
   if (!u || !isAdmin(u)) return res.status(403).send('Доступ запрещён');
   next();
 }
@@ -291,75 +359,88 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
-app.get('/', authRequired, (req, res) => {
-  const { users, zones, devices } = loadAll();
-  const user = users[req.session.userId];
+app.get('/', authRequired, async (req, res) => {
+  try {
+    const user = req.user;
 
-  const allowedZones = new Set(user.zones || []);
-  const allowedDevices = Object.entries(devices)
-    .filter(([id, d]) => allowedZones.has(d.zone))
-    .map(([id, d]) => ({ id, ...d, zoneName: zones[d.zone]?.title || d.zone }));
+    const [zones, devices] = await Promise.all([
+      dbGetZonesMap(),
+      dbGetDevicesMap()
+    ]);
 
-  // группировка по зонам
-  const byZone = {};
-  for (const d of allowedDevices) {
-    const key = d.zone;
-    byZone[key] = byZone[key] || { zone: key, zoneName: d.zoneName, devices: [] };
-    byZone[key].devices.push(d);
+    const allowedZones = new Set(user.zones || []);
+    const allowedDevices = Object.entries(devices)
+      .filter(([id, d]) => allowedZones.size === 0 || allowedZones.has(d.zone))
+      .map(([id, d]) => ({ id, ...d, zoneName: zones[d.zone]?.title || d.zone }));
+
+    // группировка по зонам
+    const byZone = {};
+    for (const d of allowedDevices) {
+      const key = d.zone;
+      byZone[key] = byZone[key] || { zone: key, zoneName: d.zoneName, devices: [] };
+      byZone[key].devices.push(d);
+    }
+
+    res.render('dashboard', {
+      user,
+      byZone: Object.values(byZone).sort((a,b)=>String(a.zoneName).localeCompare(String(b.zoneName),'ru')),
+      title: 'Зоны • Parking Git',
+      bodyClass: 'theme-premium page-dashboard'
+    });
+  } catch (e) {
+    console.error('dashboard error:', e);
+    res.status(500).send('Dashboard error');
   }
-
-  res.render('dashboard', {
-    user,
-    byZone: Object.values(byZone).sort((a,b)=>a.zoneName.localeCompare(b.zoneName,'ru')),
-    title: 'Зоны • Parking Git',
-    bodyClass: 'theme-premium page-dashboard'
-  });
 });
 
 app.post('/api/open/:deviceId', authRequired, async (req, res) => {
   const deviceId = req.params.deviceId;
-  const { users, devices, logs } = loadAll();
-  const user = users[req.session.userId];
-  const device = devices[deviceId];
+  const user = req.user;
 
+  const device = await dbGetDeviceById(deviceId);
   if (!device) return res.status(404).json({ ok: false, error: 'Устройство не найдено' });
 
   const allowedZones = new Set(user.zones || []);
-  if (!allowedZones.has(device.zone)) return res.status(403).json({ ok: false, error: 'Нет доступа к зоне' });
+  if (allowedZones.size > 0 && !allowedZones.has(device.zone)) {
+    return res.status(403).json({ ok: false, error: 'Нет доступа к зоне' });
+  }
 
   try {
-    await openDevice(device);
-await appendTransitEvent({
-  point: devicePointLabel(device, deviceId),
-  event: 'Открытие',
-  source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
-  result: 'Успешно',
-  session: req.sessionID || null
-});
-res.json({ ok: true });
+    await openDevice({ ...device, method: (device.method || 'GET') });
+
+    await appendTransitEvent({
+      point: devicePointLabel(device, deviceId),
+      event: 'Открытие',
+      source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
+      result: 'Успешно',
+      session: req.sessionID || null
+    });
+
+    return res.json({ ok: true });
   } catch (e) {
     await appendTransitEvent({
-  point: devicePointLabel(device, deviceId),
-  event: 'Ошибка',
-  source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
-  result: 'Ошибка: ' + String(e.message || e),
-  session: req.sessionID || null
-});
-res.status(500).json({ ok: false, error: 'Ошибка открытия: ' + (e.message || e) });
+      point: devicePointLabel(device, deviceId),
+      event: 'Ошибка',
+      source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
+      result: 'Ошибка: ' + String(e.message || e),
+      session: req.sessionID || null
+    });
+
+    return res.status(500).json({ ok: false, error: 'Ошибка открытия: ' + (e.message || e) });
   }
 });
 
 
-app.get('/logs', authRequired, (req, res) => {
-  const { users, transit } = loadAll();
-  const user = users[req.session.userId];
+app.get('/logs', authRequired, async (req, res) => {
+  const user = req.user;
 
   const fio = String(user.fio || '').trim();
   const phone = String(user.phone || '').replace(/\D/g, '');
 
+  const transit = await dbFetchTransitEvents(2000);
+
   const base = transit
     .slice()
-    .reverse()
     .filter(e => {
       const src = String(e.source || '');
       const srcDigits = src.replace(/\D/g, '');
@@ -385,16 +466,16 @@ app.get('/logs', authRequired, (req, res) => {
   });
 });
 
-app.get('/logs.csv', authRequired, (req, res) => {
-  const { users, transit } = loadAll();
-  const user = users[req.session.userId];
+app.get('/logs.csv', authRequired, async (req, res) => {
+  const user = req.user;
 
   const fio = String(user.fio || '').trim();
   const phone = String(user.phone || '').replace(/\D/g, '');
 
+  const transit = await dbFetchTransitEvents(5000);
+
   const base = transit
     .slice()
-    .reverse()
     .filter(e => {
       const src = String(e.source || '');
       const srcDigits = src.replace(/\D/g, '');
@@ -535,11 +616,12 @@ app.post('/admin/devices/:id/delete', authRequired, adminRequired, (req, res) =>
 });
 
 
-app.get('/admin/transit', authRequired, adminRequired, (req, res) => {
-  const { users, transit } = loadAll();
-  const user = users[req.session.userId];
+app.get('/admin/transit', authRequired, adminRequired, async (req, res) => {
+  const user = req.user;
 
-  const base = transit.slice().reverse(); // newest first
+  const transit = await dbFetchTransitEvents(5000);
+  const base = transit.slice(); // newest first already
+
   const options = getTransitFilterOptions(base);
   const filtered = applyTransitFilters(base, req.query).slice(0, 2000);
 
@@ -559,10 +641,9 @@ app.get('/admin/transit', authRequired, adminRequired, (req, res) => {
   });
 });
 
-app.get('/admin/transit.csv', authRequired, adminRequired, (req, res) => {
-  const { transit } = loadAll();
-  const base = transit.slice().reverse();
-  const filtered = applyTransitFilters(base, req.query);
+app.get('/admin/transit.csv', authRequired, adminRequired, async (req, res) => {
+  const transit = await dbFetchTransitEvents(20000);
+  const filtered = applyTransitFilters(transit, req.query);
   const rows = transitToCsvRows(filtered);
   const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
   sendCsv(res, `transit-all-${stamp}.csv`, rows);
