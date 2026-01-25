@@ -11,7 +11,10 @@
 <body class="<%= bodyClass || '' %>">
 <nav class="navbar navbar-expand-lg premium-navbar border-bottom">
   <div class="container">
-    <a class="navbar-brand fw-semibold" href="/">СКУД <span>5К5</span></a>
+    <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="/">
+      <img class="pg-brand-logo" src="/public/logo.jpg" alt="Parking GIT"/>
+      <span class="pg-brand-text">Parking GIT</span>
+    </a>
 
     <% if (user) { %>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#pgNav"

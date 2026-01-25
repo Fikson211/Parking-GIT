@@ -218,3 +218,33 @@ html, body{ -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: graysc
 }
 .alert-warning{ background: rgba(245,214,122,.12) !important; color: var(--pg-text) !important; }
 .alert-danger{ background: rgba(255,99,132,.12) !important; color: var(--pg-text) !important; }
+
+/* Brand */
+.pg-brand-logo{
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow: 0 8px 20px rgba(0,0,0,.35);
+}
+.pg-brand-text{
+  font-weight: 800;
+  letter-spacing: .4px;
+  text-transform: none;
+}
+
+/* Prevent navbar overflow on phones */
+.navbar .container{
+  flex-wrap: wrap;
+}
+.navbar-brand{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70vw;
+}
+@media (max-width: 576px){
+  .pg-brand-logo{ width: 34px; height: 34px; }
+  .navbar-brand{ max-width: 62vw; }
+}
