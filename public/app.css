@@ -248,3 +248,65 @@ html, body{ -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: graysc
   .pg-brand-logo{ width: 34px; height: 34px; }
   .navbar-brand{ max-width: 62vw; }
 }
+
+/* ===== Улучшение читаемости карточек и таблиц ===== */
+
+/* Основной текст в карточках и таблицах */
+.card, 
+.card *, 
+.table, 
+.table td, 
+.table th {
+  color: #1a1a1a !important;
+}
+
+/* Второстепенный текст */
+.text-muted {
+  color: #6b7280 !important;
+}
+
+/* Даты */
+.audit-date,
+.small.text-muted {
+  color: #4b5563 !important;
+  font-weight: 500;
+}
+
+/* Действия (login/logout) */
+.audit-action.login {
+  color: #2563eb !important;
+  font-weight: 600;
+}
+
+.audit-action.logout {
+  color: #dc2626 !important;
+  font-weight: 600;
+}
+
+/* IP адрес */
+.audit-ip {
+  color: #111827 !important;
+  font-family: monospace;
+}
+
+/* Карточки и строки */
+.card,
+.table tr {
+  background: #ffffff !important;
+  border-radius: 12px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+}
+
+/* Заголовки таблиц */
+.table th {
+  background: #f9fafb !important;
+  color: #111827 !important;
+  font-weight: 700;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 768px) {
+  .card, .table {
+    font-size: 14px;
+  }
+}
