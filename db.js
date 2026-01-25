@@ -6,3 +6,5 @@ const pool = new Pool({
 });
 
 module.exports = { pool };
+
+console.log("DATABASE_URL exists?", !!process.env.DATABASE_URL);
