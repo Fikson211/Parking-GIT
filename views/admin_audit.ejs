@@ -27,7 +27,7 @@
         <% entries.forEach(e => { %>
           <tr>
             <td class="small text-muted">
-              <%= (e.ts || '').replace('T',' ').replace('Z','') %>
+              <%= (e.ts ? (typeof e.ts === 'string' ? e.ts : e.ts.toISOString()) : '').replace('T',' ').replace('Z','') %>
             </td>
             <td>
               <div class="fw-semibold"><%= e.actorFio || '—' %></div>
