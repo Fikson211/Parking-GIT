@@ -12,19 +12,27 @@
 <nav class="navbar navbar-expand-lg premium-navbar border-bottom">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="/">СКУД <span>5К5</span></a>
-    <div class="d-flex gap-2">
-      <% if (user) { %>
-        <a class="btn btn-sm btn-outline-secondary" href="/logs">Журнал транзита</a>
-        <% if (user.role === 'admin') { %>
-          <div class="btn-group">
+
+    <% if (user) { %>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#pgNav"
+              aria-controls="pgNav" aria-expanded="false" aria-label="Меню">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+    <% } %>
+
+    <div class="collapse navbar-collapse" id="pgNav">
+      <div class="ms-auto d-flex nav-actions flex-wrap align-items-center py-2 py-lg-0">
+        <% if (user) { %>
+          <a class="btn btn-sm btn-outline-secondary" href="/logs">Журнал транзита</a>
+          <% if (user.role === 'admin') { %>
             <a class="btn btn-sm btn-outline-primary" href="/admin/transit">Транзит</a>
             <a class="btn btn-sm btn-outline-primary" href="/admin/users">Пользователи</a>
             <a class="btn btn-sm btn-outline-primary" href="/admin/devices">Устройства</a>
             <a class="btn btn-sm btn-outline-primary" href="/admin/audit">Журнал</a>
-          </div>
+          <% } %>
+          <a class="btn btn-sm btn-outline-danger" href="/logout">Выйти</a>
         <% } %>
-        <a class="btn btn-sm btn-outline-danger" href="/logout">Выйти</a>
-      <% } %>
+      </div>
     </div>
   </div>
 </nav>
