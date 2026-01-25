@@ -101,6 +101,80 @@ async function dbGetUserById(id) {
   return r.rows[0] || null;
 }
 
+
+async function dbGetUsersMap() {
+  const r = await pool.query(
+    `SELECT id, fio, phone, role, status, pin, COALESCE(zones, ARRAY[]::text[]) AS zones
+     FROM public.users
+     ORDER BY fio NULLS LAST, phone NULLS LAST, id`
+  );
+  const map = {};
+  for (const u of r.rows) {
+    map[u.id] = {
+      fio: u.fio || '',
+      phone: u.phone || '',
+      role: u.role || 'user',
+      status: u.status || 'active',
+      zones: u.zones || [],
+    };
+    if (u.pin) map[u.id].pin = String(u.pin);
+  }
+  return map;
+}
+
+async function dbUpsertUser(id, { fio, phone, role, status, zones, pin }) {
+  const z = Array.isArray(zones) ? zones : (zones ? [zones] : []);
+  await pool.query(
+    `INSERT INTO public.users (id, fio, phone, role, status, pin, zones)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (id) DO UPDATE SET
+       fio=EXCLUDED.fio,
+       phone=EXCLUDED.phone,
+       role=EXCLUDED.role,
+       status=EXCLUDED.status,
+       pin=EXCLUDED.pin,
+       zones=EXCLUDED.zones`,
+    [
+      id,
+      fio || '',
+      phone || '',
+      role || 'user',
+      status || 'active',
+      (pin !== undefined && String(pin).trim() !== '') ? String(pin).trim() : null,
+      z
+    ]
+  );
+}
+
+async function dbDeleteUser(id) {
+  await pool.query(`DELETE FROM public.users WHERE id = $1`, [id]);
+}
+
+async function dbUpsertDevice(id, { name, zone, type, method, url }) {
+  await pool.query(
+    `INSERT INTO public.devices (id, name, zone, type, method, url)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (id) DO UPDATE SET
+       name=EXCLUDED.name,
+       zone=EXCLUDED.zone,
+       type=EXCLUDED.type,
+       method=EXCLUDED.method,
+       url=EXCLUDED.url`,
+    [
+      id,
+      name || id,
+      zone || null,
+      type || 'rodos',
+      (method || 'GET').toUpperCase(),
+      url || ''
+    ]
+  );
+}
+
+async function dbDeleteDevice(id) {
+  await pool.query(`DELETE FROM public.devices WHERE id = $1`, [id]);
+}
+
 async function dbGetDeviceById(id) {
   const r = await pool.query(
     `SELECT id, name, zone, type, method, url
@@ -142,6 +216,18 @@ async function dbFetchTransitEvents(limit = 2000) {
   );
   return r.rows || [];
 }
+
+async function dbFetchAudit(limit = 2000) {
+  const r = await pool.query(
+    `SELECT ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua
+     FROM public.audit
+     ORDER BY ts DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return r.rows || [];
+}
+
 // ------------------- /PostgreSQL helpers -------------------
 
 
@@ -230,8 +316,7 @@ function sendCsv(res, filename, rows) {
 
 async function appendAudit(req, action, targetType, targetId, details) {
   try {
-    const { users } = loadAll(); // временно, пока users ещё в json
-    const actor = users[req.session?.userId] || null;
+    const actor = req.session?.userId ? await dbGetUserById(req.session.userId) : null;
 
     await pool.query(
       `INSERT INTO public.audit(ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua)
@@ -500,121 +585,188 @@ app.get('/admin', authRequired, adminRequired, (req, res) => {
   res.redirect('/admin/users');
 });
 
-app.get('/admin/users', authRequired, adminRequired, (req, res) => {
-  const { users, zones, roles } = loadAll();
-  res.render('admin_users', { users, zones, roles, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
-});
 
+app.get('/admin/users', authRequired, adminRequired, async (req, res) => {
+  try {
+    const [{ rows: zoneRows }, usersMap] = await Promise.all([
+      pool.query(`SELECT id, title FROM public.zones ORDER BY title`),
+      dbGetUsersMap()
+    ]);
 
-app.post('/admin/users/new', authRequired, adminRequired, (req, res) => {
-  const { users } = loadAll();
-  const fio = String(req.body.fio || '').trim();
-  const phone = String(req.body.phone || '').trim();
-  const role = String(req.body.role || 'user').trim();
-  const status = String(req.body.status || 'active').trim();
-  const pinRaw = String(req.body.pin || '').trim();
+    const zones = {};
+    for (const z of zoneRows) zones[z.id] = { title: z.title };
 
-  if (!phone) return res.status(400).send('Телефон обязателен');
-  // ensure phone unique
-  const existing = findUserIdByPhone(users, phone);
-  if (existing) return res.status(400).send('Пользователь с таким телефоном уже есть');
-
-  const id = 'u_' + Date.now();
-  const zonesBody = req.body.zones;
-  let zones = [];
-  if (Array.isArray(zonesBody)) zones = zonesBody;
-  else if (typeof zonesBody === 'string') zones = [zonesBody];
-
-  users[id] = {
-    fio: fio || '',
-    phone,
-    role,
-    status,
-    zones,
-  };
-  if (pinRaw) users[id].pin = pinRaw;
-
-  writeJson(USERS_FILE, users);
-  appendAudit(req, 'user_create', 'user', id, { fio, phone, role, status, zones });
-  res.redirect('/admin/users');
-});
-
-app.post('/admin/users/:id/delete', authRequired, adminRequired, (req, res) => {
-  const userId = req.params.id;
-  const { users } = loadAll();
-  const u = users[userId];
-  if (!u) return res.status(404).send('User not found');
-  delete users[userId];
-  writeJson(USERS_FILE, users);
-  appendAudit(req, 'user_delete', 'user', userId, { phone: u.phone, fio: u.fio });
-  res.redirect('/admin/users');
-});
-
-app.post('/admin/users/:id', authRequired, adminRequired, (req, res) => {
-  const userId = req.params.id;
-  const { users } = loadAll();
-  if (!users[userId]) return res.status(404).send('User not found');
-
-  users[userId].fio = req.body.fio ?? users[userId].fio;
-  users[userId].phone = req.body.phone ?? users[userId].phone;
-  users[userId].role = req.body.role ?? users[userId].role;
-  users[userId].status = req.body.status ?? users[userId].status;
-
-  // zones[] (checkboxes)
-  const zones = req.body.zones;
-  if (Array.isArray(zones)) users[userId].zones = zones;
-  if (typeof zones === 'string') users[userId].zones = [zones];
-  if (!zones) users[userId].zones = [];
-
-  // pin optional
-  if (req.body.pin !== undefined && String(req.body.pin).trim() !== '') {
-    users[userId].pin = String(req.body.pin).trim();
+    const { roles } = loadAll(); // роли можно пока держать в json (не критично)
+    res.render('admin_users', { users: usersMap, zones, roles, msg: null, user: req.user, bodyClass: 'theme-premium' });
+  } catch (e) {
+    console.error('admin/users error:', e);
+    res.status(500).send('Admin users error');
   }
-
-  writeJson(USERS_FILE, users);
-  appendAudit(req, 'user_update', 'user', userId, { fio: users[userId].fio, phone: users[userId].phone, role: users[userId].role, status: users[userId].status, zones: users[userId].zones, pinSet: (users[userId].pin?true:false) });
-  res.redirect('/admin/users');
 });
 
-app.get('/admin/devices', authRequired, adminRequired, (req, res) => {
-  const { users, devices, zones } = loadAll();
-  res.render('admin_devices', { devices, zones, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
+app.post('/admin/users/new', authRequired, adminRequired, async (req, res) => {
+  try {
+    const fio = String(req.body.fio || '').trim();
+    const phone = String(req.body.phone || '').trim();
+    const role = String(req.body.role || 'user').trim();
+    const status = String(req.body.status || 'active').trim();
+    const pinRaw = String(req.body.pin || '').trim();
+
+    if (!phone) return res.status(400).send('Телефон обязателен');
+
+    // ensure phone unique (by digits)
+    const phoneDigits = phone.replace(/\D/g, '');
+    const ex = await pool.query(
+      `SELECT id FROM public.users WHERE regexp_replace(phone, '\\D', '', 'g') = $1 LIMIT 1`,
+      [phoneDigits]
+    );
+    if (ex.rows[0]) return res.status(400).send('Пользователь с таким телефоном уже есть');
+
+    const id = 'u_' + Date.now();
+
+    const zonesBody = req.body.zones;
+    let zones = [];
+    if (Array.isArray(zonesBody)) zones = zonesBody;
+    else if (typeof zonesBody === 'string') zones = [zonesBody];
+
+    await dbUpsertUser(id, { fio, phone, role, status, zones, pin: (pinRaw || undefined) });
+
+    await appendAudit(req, 'user_create', 'user', id, { fio, phone, role, status, zones });
+    res.redirect('/admin/users');
+  } catch (e) {
+    console.error('admin/users/new error:', e);
+    res.status(500).send('Admin users create error');
+  }
 });
 
+app.post('/admin/users/:id/delete', authRequired, adminRequired, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const u = await dbGetUserById(userId);
+    if (!u) return res.status(404).send('User not found');
+
+    await dbDeleteUser(userId);
+    await appendAudit(req, 'user_delete', 'user', userId, { phone: u.phone, fio: u.fio });
+
+    // если удалили себя — выкидываем на логин
+    if (req.session?.userId === userId) {
+      req.session.destroy(() => res.redirect('/login'));
+      return;
+    }
+
+    res.redirect('/admin/users');
+  } catch (e) {
+    console.error('admin/users/delete error:', e);
+    res.status(500).send('Admin users delete error');
+  }
+});
+
+app.post('/admin/users/:id', authRequired, adminRequired, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const existing = await dbGetUserById(userId);
+    if (!existing) return res.status(404).send('User not found');
+
+    const fio = (req.body.fio !== undefined) ? String(req.body.fio).trim() : existing.fio;
+    const phone = (req.body.phone !== undefined) ? String(req.body.phone).trim() : existing.phone;
+    const role = (req.body.role !== undefined) ? String(req.body.role).trim() : existing.role;
+    const status = (req.body.status !== undefined) ? String(req.body.status).trim() : existing.status;
+
+    // zones[] (checkboxes)
+    const zonesBody = req.body.zones;
+    let zones = [];
+    if (Array.isArray(zonesBody)) zones = zonesBody;
+    else if (typeof zonesBody === 'string') zones = [zonesBody];
+
+    // pin optional: если пусто — не трогаем
+    let pin = undefined;
+    if (req.body.pin !== undefined && String(req.body.pin).trim() !== '') {
+      pin = String(req.body.pin).trim();
+    } else {
+      // оставляем как есть (может быть null)
+      pin = existing.pin || null;
+    }
+
+    // phone uniqueness (if changed)
+    const oldDigits = String(existing.phone || '').replace(/\D/g, '');
+    const newDigits = String(phone || '').replace(/\D/g, '');
+    if (newDigits && newDigits !== oldDigits) {
+      const ex = await pool.query(
+        `SELECT id FROM public.users WHERE regexp_replace(phone, '\\D', '', 'g') = $1 AND id <> $2 LIMIT 1`,
+        [newDigits, userId]
+      );
+      if (ex.rows[0]) return res.status(400).send('Пользователь с таким телефоном уже есть');
+    }
+
+    await dbUpsertUser(userId, { fio, phone, role, status, zones, pin });
+
+    await appendAudit(req, 'user_update', 'user', userId, { fio, phone, role, status, zones, pinSet: (pin ? true : false) });
+    res.redirect('/admin/users');
+  } catch (e) {
+    console.error('admin/users/update error:', e);
+    res.status(500).send('Admin users update error');
+  }
+});
+
+
+app.get('/admin/devices', authRequired, adminRequired, async (req, res) => {
+  try {
+    const [zones, devices] = await Promise.all([
+      dbGetZonesMap(),
+      dbGetDevicesMap()
+    ]);
+    res.render('admin_devices', { devices, zones, msg: null, user: req.user, bodyClass: 'theme-premium' });
+  } catch (e) {
+    console.error('admin/devices error:', e);
+    res.status(500).send('Admin devices error');
+  }
+});
 
 app.post('/admin/devices/new', authRequired, adminRequired, (req, res) => {
   const id = String(req.body.id || '').trim();
   if (!id) return res.status(400).send('Device id required');
-  req.params.id = id;
   // переиспользуем обработчик /admin/devices/:id
   res.redirect(307, '/admin/devices/' + encodeURIComponent(id));
 });
-app.post('/admin/devices/:id', authRequired, adminRequired, (req, res) => {
-  const deviceId = req.params.id;
-  const { devices } = loadAll();
-  if (!devices[deviceId]) devices[deviceId] = {};
-  devices[deviceId].name = req.body.name || deviceId;
-  devices[deviceId].zone = req.body.zone;
-  devices[deviceId].type = req.body.type || 'rodos';
-  devices[deviceId].method = req.body.method || 'GET';
 
-  // URL: можно хранить сразу с http://user:pass@ip/...
-  devices[deviceId].url = req.body.url;
+app.post('/admin/devices/:id', authRequired, adminRequired, async (req, res) => {
+  try {
+    const deviceId = String(req.params.id || '').trim();
+    if (!deviceId) return res.status(400).send('Device id required');
 
-  writeJson(DEVICES_FILE, devices);
-  appendAudit(req, 'device_upsert', 'device', id, { name, zone, method, url });
-  res.redirect('/admin/devices');
+    const name = String(req.body.name || deviceId).trim();
+    const zone = String(req.body.zone || '').trim();
+    const type = String(req.body.type || 'rodos').trim();
+    const method = String(req.body.method || 'GET').trim();
+    const url = String(req.body.url || '').trim();
+
+    if (!zone) return res.status(400).send('Зона обязательна');
+    if (!url) return res.status(400).send('URL обязателен');
+
+    await dbUpsertDevice(deviceId, { name, zone, type, method, url });
+    await appendAudit(req, 'device_upsert', 'device', deviceId, { name, zone, type, method, url });
+
+    res.redirect('/admin/devices');
+  } catch (e) {
+    console.error('admin/devices/upsert error:', e);
+    res.status(500).send('Admin devices upsert error');
+  }
 });
 
-app.post('/admin/devices/:id/delete', authRequired, adminRequired, (req, res) => {
-  const deviceId = req.params.id;
-  const { devices } = loadAll();
-  delete devices[deviceId];
-  writeJson(DEVICES_FILE, devices);
-  appendAudit(req, 'device_upsert', 'device', id, { name, zone, method, url });
-  res.redirect('/admin/devices');
-});
+app.post('/admin/devices/:id/delete', authRequired, adminRequired, async (req, res) => {
+  try {
+    const deviceId = String(req.params.id || '').trim();
+    if (!deviceId) return res.status(400).send('Device id required');
 
+    await dbDeleteDevice(deviceId);
+    await appendAudit(req, 'device_delete', 'device', deviceId, null);
+
+    res.redirect('/admin/devices');
+  } catch (e) {
+    console.error('admin/devices/delete error:', e);
+    res.status(500).send('Admin devices delete error');
+  }
+});
 
 app.get('/admin/transit', authRequired, adminRequired, async (req, res) => {
   const user = req.user;
@@ -650,10 +802,15 @@ app.get('/admin/transit.csv', authRequired, adminRequired, async (req, res) => {
 });
 
 
-app.get('/admin/audit', authRequired, adminRequired, (req, res) => {
-  const { users, audit } = loadAll();
-  const list = audit.slice().reverse().slice(0, 1000);
-  res.render('admin_audit', { title: 'Админ • Журнал действий', entries: list, user: users[req.session.userId], bodyClass: 'theme-premium' });
+
+app.get('/admin/audit', authRequired, adminRequired, async (req, res) => {
+  try {
+    const list = await dbFetchAudit(2000);
+    res.render('admin_audit', { title: 'Админ • Журнал действий', entries: list, user: req.user, bodyClass: 'theme-premium' });
+  } catch (e) {
+    console.error('admin/audit error:', e);
+    res.status(500).send('Admin audit error');
+  }
 });
 
 app.listen(PORT, () => {
