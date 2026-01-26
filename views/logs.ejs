@@ -61,10 +61,32 @@
   </div>
 </div>
 
-<div class="card shadow-sm">
+<div class="log-mobile-list d-block d-md-none">
+  <% logs.forEach(l => { %>
+    <div class="lux-card mb-2">
+      <div class="lux-card-head">
+        <div class="lux-badge"><%= l.event || '-' %></div>
+        <div class="lux-muted"><%= (l.datetime ? new Date(l.datetime).toLocaleString('ru-RU') : '-') %></div>
+      </div>
+      <div class="lux-card-body">
+        <div class="lux-row"><span class="lux-label">Точка</span><span class="lux-value"><%= l.point || '-' %></span></div>
+        <div class="lux-row"><span class="lux-label">Источник</span><span class="lux-value lux-muted"><%= l.source || '-' %></span></div>
+        <div class="lux-row"><span class="lux-label">Результат</span><span class="lux-value"><%= l.result || '—' %></span></div>
+        <% if (l.session) { %>
+          <div class="lux-row"><span class="lux-label">Сессия</span><span class="lux-value"><code class="mono"><%= l.session %></code></span></div>
+        <% } %>
+      </div>
+    </div>
+  <% }) %>
+  <% if (!logs.length) { %>
+    <div class="lux-card"><div class="lux-card-body lux-muted">Пока пусто.</div></div>
+  <% } %>
+</div>
+
+<div class="card shadow-sm d-none d-md-block">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 table-lux">
         <thead>
           <tr>
             <th style="white-space:nowrap">Дата/время</th>
@@ -80,26 +102,18 @@
             <tr>
               <td style="white-space:nowrap"><%= (l.datetime ? new Date(l.datetime).toLocaleString('ru-RU') : '-') %></td>
               <td><%= l.point || '-' %></td>
-              <td><span class="badge rounded-pill text-bg-secondary"><%= l.event || '-' %></span></td>
-              <td class="text-muted"><%= l.source || '-' %></td>
-              <td>
-                <% if (String(l.result || '').toLowerCase().startsWith('ошибка')) { %>
-                  <span class="badge text-bg-danger">Ошибка</span>
-                  <span class="ms-2"><%= l.result %></span>
-                <% } else { %>
-                  <span class="badge text-bg-success">Успешно</span>
-                  <span class="ms-2"><%= l.result || 'Успешно' %></span>
-                <% } %>
-              </td>
-              <td class="text-muted" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
-                <%= l.session || '-' %>
-              </td>
+              <td><span class="badge rounded-pill badge-lux"><%= l.event || '-' %></span></td>
+              <td class="lux-muted"><%= l.source || '-' %></td>
+              <td><%= l.result || '—' %></td>
+              <td class="lux-muted mono"><%= l.session || '-' %></td>
             </tr>
           <% }) %>
+          <% if (!logs.length) { %>
+            <tr><td colspan="6" class="lux-muted p-4">Пока пусто.</td></tr>
+          <% } %>
         </tbody>
       </table>
     </div>
   </div>
 </div>
-
 <%- include('partials/footer') %>

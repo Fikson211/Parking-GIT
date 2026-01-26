@@ -16,7 +16,7 @@
     <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
       <div>
         <div class="fw-semibold mb-1">Добавить пользователя</div>
-        <div class="text-muted small">Логин: телефон + PIN. Если PIN не задан — по умолчанию последние 4 цифры телефона.</div>
+        <div class="text-muted small">Логин: телефон + PIN. Если PIN не задан — он будет сгенерирован автоматически.</div>
       </div>
     </div>
 
@@ -85,6 +85,7 @@
         <tr>
           <th style="min-width:240px">Пользователь</th>
           <th>Телефон</th>
+          <th>PIN</th>
           <th>Роль</th>
           <th>Статус</th>
           <th style="min-width:260px">Зоны</th>
@@ -99,6 +100,7 @@
             <div class="text-muted small">ID: <%= id %></div>
           </td>
           <td><code><%= u.phone || '' %></code></td>
+          <td><code class="pin-code"><%= u.pin || '—' %></code></td>
           <td><span class="badge text-bg-light border"><%= u.role || '' %></span></td>
           <td>
             <% const st = (u.status || 'active'); %>
@@ -119,7 +121,7 @@
         </tr>
 
         <tr class="collapse-row">
-          <td colspan="6" class="p-0 border-top-0">
+          <td colspan="7" class="p-0 border-top-0">
             <div id="edit_<%= id %>" class="collapse">
               <div class="p-3 bg-body-tertiary">
                 <form method="post" action="/admin/users/<%= id %>" class="row g-2">

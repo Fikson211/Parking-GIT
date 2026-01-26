@@ -16,7 +16,7 @@
   <% byZone.forEach((z, idx) => { const cid = 'zone_' + idx; %>
     <div class="accordion-item shadow-sm rounded-4 overflow-hidden mb-2">
       <h2 class="accordion-header" id="h_<%= cid %>">
-        <button class="accordion-button <%= idx===0 ? '' : 'collapsed' %>" type="button"
+        <button class="accordion-button zone-toggle <%= idx===0 ? '' : 'collapsed' %>" type="button"
                 data-bs-toggle="collapse" data-bs-target="#c_<%= cid %>"
                 aria-expanded="<%= idx===0 ? 'true' : 'false' %>" aria-controls="c_<%= cid %>">
           <span class="me-2">📍</span>
@@ -28,12 +28,12 @@
         <div class="accordion-body">
           <div class="vstack gap-2">
             <% z.devices.forEach(d => { %>
-              <div class="device-row d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2">
-                <div class="me-sm-3">
+              <div class="d-flex align-items-center justify-content-between border rounded-4 p-3 bg-white">
+                <div>
                   <div class="fw-semibold"><%= d.name %></div>
                   <div class="text-muted small"><%= d.id %></div>
                 </div>
-                <button class="btn-lux" onclick="openDevice('<%= d.id %>', this)">Открыть</button>
+                <button class="btn btn-success" onclick="openDevice('<%= d.id %>', this)">Открыть</button>
               </div>
             <% }) %>
           </div>
