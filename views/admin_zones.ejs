@@ -1,0 +1,51 @@
+<%- include('partials/header', { title, bodyClass, user }) %>
+
+<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="h4 mb-0">Зоны</h1>
+    <div class="text-muted small">Список зон доступа</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-soft" href="/admin/users">Пользователи</a>
+    <a class="btn btn-soft" href="/admin/devices">Устройства</a>
+    <a class="btn btn-soft" href="/admin/audit">Аудит</a>
+  </div>
+</div>
+
+<div class="card card-glass p-3 p-md-4 mb-4">
+  <h2 class="h6 mb-3">Добавить / обновить зону</h2>
+  <form method="post" action="/admin/zones/create" class="row g-2">
+    <div class="col-12 col-md-4">
+      <input class="form-control" name="id" placeholder="ID (можно пусто)" />
+    </div>
+    <div class="col-12 col-md-6">
+      <input class="form-control" name="name" placeholder="Название" required />
+    </div>
+    <div class="col-12 col-md-2 d-grid">
+      <button class="btn btn-primary" type="submit">Сохранить</button>
+    </div>
+  </form>
+</div>
+
+<div class="card card-glass p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Название</th>
+        </tr>
+      </thead>
+      <tbody>
+      <% zones.forEach(z => { %>
+        <tr>
+          <td class="text-nowrap"><code><%= z.id %></code></td>
+          <td><%= z.name %></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

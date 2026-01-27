@@ -1,62 +1,98 @@
+'use strict';
+
 const { Pool } = require('pg');
 
-const DATABASE_URL = process.env.DATABASE_URL || process.env.DATABASE_URL_POSTGRES || process.env.POSTGRES_URL;
+// Railway: DATABASE_URL
+// Local: PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE
+const connectionString = process.env.DATABASE_URL || null;
 
-const pool = DATABASE_URL
-  ? new Pool({
-      connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    })
-  : null;
+const pool = new Pool(
+  connectionString
+    ? {
+        connectionString,
+        // Railway Postgres обычно работает через SSL
+        ssl: { rejectUnauthorized: false },
+      }
+    : {
+        host: process.env.PGHOST || '127.0.0.1',
+        port: Number(process.env.PGPORT || 5432),
+        user: process.env.PGUSER || 'postgres',
+        password: process.env.PGPASSWORD || '',
+        database: process.env.PGDATABASE || 'postgres',
+      }
+);
 
-async function initSchema() {
-  if (!pool) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS zones (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      sort INT DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS devices (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      zone_id TEXT REFERENCES zones(id) ON DELETE SET NULL,
-      method TEXT DEFAULT 'GET',
-      url TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      fio TEXT NOT NULL,
-      phone TEXT UNIQUE NOT NULL,
-      role TEXT DEFAULT 'user',
-      status TEXT DEFAULT 'active',
-      pin TEXT,
-      zones TEXT[] DEFAULT '{}'::text[]
-    );
-
-    CREATE TABLE IF NOT EXISTS audit (
-      id BIGSERIAL PRIMARY KEY,
-      ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      actor TEXT,
-      action TEXT,
-      object_type TEXT,
-      object_id TEXT,
-      ip TEXT,
-      details JSONB
-    );
-
-    CREATE TABLE IF NOT EXISTS transit_events (
-      id BIGSERIAL PRIMARY KEY,
-      ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      point TEXT,
-      event TEXT,
-      actor TEXT,
-      result TEXT,
-      session_id TEXT
-    );
-  `);
+async function dbQuery(text, params) {
+  return pool.query(text, params);
 }
 
-module.exports = { pool, initSchema };
+async function ensureSchema() {
+  // Таблицы (минимально необходимое)
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.users (
+      id          text PRIMARY KEY,
+      fio         text,
+      phone       text,
+      pin         text,
+      role        text DEFAULT 'user',
+      zones       jsonb DEFAULT '[]'::jsonb,
+      is_active   boolean DEFAULT true,
+      created_at  timestamptz DEFAULT NOW()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.zones (
+      id    text PRIMARY KEY,
+      name  text,
+      sort  integer DEFAULT 0
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.devices (
+      id        text PRIMARY KEY,
+      name      text,
+      zone_id   text,
+      method    text,
+      url       text,
+      sort      integer DEFAULT 0,
+      is_active boolean DEFAULT true
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.audit (
+      id          bigserial PRIMARY KEY,
+      ts          timestamptz DEFAULT NOW(),
+      actor_id    text,
+      actor_phone text,
+      actor_fio   text,
+      action      text,
+      target_type text,
+      target_id   text,
+      details     text,
+      ip          text,
+      ua          text
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.transit_events (
+      id       bigserial PRIMARY KEY,
+      datetime timestamptz DEFAULT NOW(),
+      point    text,
+      event    text,
+      source   text,
+      result   text,
+      session  text
+    );
+  `);
+
+  // На всякий случай: если таблицы были старые без sort
+  await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
+  await dbQuery(`ALTER TABLE IF EXISTS public.zones   ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
+  await dbQuery(`ALTER TABLE IF EXISTS public.devices ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
+}
+
+module.exports = { pool, dbQuery, ensureSchema };

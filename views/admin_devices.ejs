@@ -1,89 +1,95 @@
-<%- include('partials/header', { title: 'Админ • Устройства', user, bodyClass }) %>
+<%- include('partials/header', { title, bodyClass, user }) %>
 
-<div class="page-head">
+<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
-    <div class="text-muted small">Админ-панель</div>
     <h1 class="h4 mb-0">Устройства</h1>
+    <div class="text-muted small">Добавляй устройства и привязывай к зонам</div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <a class="btn btn-sm btn-outline-secondary" href="/admin/users">Пользователи</a>
-    <a class="btn btn-sm btn-outline-secondary" href="/admin/audit">Журнал</a>
-  </div>
-</div>
-
-<div class="card shadow-sm mb-3">
-  <div class="card-body">
-    <div class="fw-semibold mb-1">Добавить / обновить устройство</div>
-    <div class="text-muted small mb-3">Если ID уже существует — запись будет обновлена.</div>
-
-    <form method="post" action="/admin/devices/new" class="row g-2">
-      <div class="col-md-2">
-        <label class="form-label">ID *</label>
-        <input class="form-control" name="id" placeholder="door4" required>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Название *</label>
-        <input class="form-control" name="name" placeholder="Дверь 4" required>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Зона *</label>
-        <select class="form-select" name="zone" required>
-          <% Object.entries(zones || {}).forEach(([zid, z]) => { %>
-            <option value="<%= zid %>"><%= z.title || zid %></option>
-          <% }) %>
-        </select>
-      </div>
-      <div class="col-md-1">
-        <label class="form-label">Метод</label>
-        <select class="form-select" name="method">
-          <option value="GET">GET</option>
-        </select>
-      </div>
-      <div class="col-md-4">
-        <label class="form-label">URL *</label>
-        <input class="form-control" name="url" placeholder="http://192.168.1.10/relay?..." required>
-      </div>
-
-      <div class="col-12">
-        <button class="btn btn-primary">Сохранить</button>
-      </div>
-    </form>
+  <div class="d-flex gap-2">
+    <a class="btn btn-soft" href="/admin/users">Пользователи</a>
+    <a class="btn btn-soft" href="/admin/zones">Зоны</a>
+    <a class="btn btn-soft" href="/admin/audit">Аудит</a>
   </div>
 </div>
 
-<div class="card shadow-sm">
+<div class="card card-glass p-3 p-md-4 mb-3">
+  <h2 class="h6 mb-3">Добавить/обновить устройство</h2>
+  <form method="post" action="/admin/devices/create" class="row g-2">
+    <div class="col-12 col-md-3">
+      <label class="form-label small text-muted">ID</label>
+      <input class="form-control" name="id" placeholder="door_1" />
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small text-muted">Название</label>
+      <input class="form-control" name="name" placeholder="Дверь серверная" required />
+    </div>
+    <div class="col-12 col-md-3">
+      <label class="form-label small text-muted">Зона</label>
+      <select class="form-select" name="zoneId">
+        <option value="">—</option>
+        <% zones.forEach(z => { %>
+          <option value="<%= z.id %>"><%= z.name %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-6 col-md-1">
+      <label class="form-label small text-muted">Метод</label>
+      <select class="form-select" name="method">
+        <option value="http">http</option>
+        <option value="rodos">rodos</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-1">
+      <label class="form-label small text-muted">URL/IP</label>
+      <input class="form-control" name="url" placeholder="http://..." />
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary w-100 w-md-auto" type="submit">Сохранить</button>
+    </div>
+  </form>
+</div>
+
+<div class="card card-glass p-0 overflow-hidden">
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="table-light">
+    <table class="table table-modern align-middle mb-0">
+      <thead>
         <tr>
-          <th style="min-width:160px">ID</th>
-          <th style="min-width:220px">Название</th>
+          <th>ID</th>
+          <th>Название</th>
           <th>Зона</th>
-          <th style="min-width:360px">URL</th>
-          <th style="width:180px">Действия</th>
+          <th>Метод</th>
+          <th>URL/IP</th>
+          <th>Активен</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        <% Object.entries(devices).forEach(([id, d]) => { %>
+        <% devices.forEach(d => { %>
           <tr>
-            <td><code><%= id %></code></td>
-            <td class="fw-semibold"><%= d.name || '' %></td>
-            <td class="small">
-              <span class="badge text-bg-light border"><%= zones[d.zone]?.title || d.zone %></span>
-            </td>
-            <td class="small text-muted">
-              <span class="text-truncate d-inline-block" style="max-width:520px; vertical-align:middle;"><%= d.url || '' %></span>
-            </td>
-            <td>
-              <form method="post" action="/admin/devices/<%= id %>/delete" class="d-inline" onsubmit="return confirm('Удалить устройство?');">
-                <button class="btn btn-sm btn-outline-danger">Удалить</button>
-              </form>
-            </td>
+            <form method="post" action="/admin/devices/<%= d.id %>/update">
+              <td class="text-mono"><%= d.id %></td>
+              <td><input class="form-control form-control-sm" name="name" value="<%= d.name || '' %>" /></td>
+              <td>
+                <select class="form-select form-select-sm" name="zoneId">
+                  <option value="">—</option>
+                  <% zones.forEach(z => { %>
+                    <option value="<%= z.id %>" <%= (d.zoneId===z.id)?'selected':'' %>><%= z.name %></option>
+                  <% }) %>
+                </select>
+              </td>
+              <td>
+                <select class="form-select form-select-sm" name="method">
+                  <option value="http" <%= d.method==='http'?'selected':'' %>>http</option>
+                  <option value="rodos" <%= d.method==='rodos'?'selected':'' %>>rodos</option>
+                </select>
+              </td>
+              <td><input class="form-control form-control-sm" name="url" value="<%= d.url || '' %>" /></td>
+              <td class="text-center"><input class="form-check-input" type="checkbox" name="is_active" <%= d.isActive ? 'checked' : '' %> /></td>
+              <td class="text-end"><button class="btn btn-soft btn-sm" type="submit">Обновить</button></td>
+            </form>
           </tr>
         <% }) %>
       </tbody>
     </table>
   </div>
 </div>
-
-<%- include('partials/footer') %>

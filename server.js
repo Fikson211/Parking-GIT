@@ -1,764 +1,516 @@
-
-const USE_DB = !!(process.env.DATABASE_URL || process.env.DATABASE_URL_POSTGRES || process.env.POSTGRES_URL);
-const { pool, initSchema } = require('./db');
-
-function normalizePhone(input) {
-  return String(input || '').replace(/\D+/g, '');
-}
-
-// safe read without throwing (если файл не существует)
-function readJsonSafe(filePath, fallback) {
-  try {
-    return readJson(filePath, fallback);
-  } catch (e) {
-    return fallback;
-  }
-}
-
-async function dbQuery(sql, params) {
-  if (!USE_DB) return [];
-  const res = await pool.query(sql, params);
-  return res.rows;
-}
-
-let _dbReady = false;
-async function ensureDbSeeded() {
-  if (!USE_DB || _dbReady) return;
-  await initSchema();
-
-  // seed zones/devices/users from JSON если в БД пусто
-  const [{ c: zc }] = await dbQuery("SELECT COUNT(*)::int AS c FROM zones");
-  const [{ c: dc }] = await dbQuery("SELECT COUNT(*)::int AS c FROM devices");
-  const [{ c: uc }] = await dbQuery("SELECT COUNT(*)::int AS c FROM users");
-
-  if (zc === 0) {
-    const zones = readJsonSafe(ZONES_FILE, {});
-    const rows = Object.values(zones).map(z => ({
-      id: z.id || z.key || z.zone || z.code,
-      name: z.name || z.title || String(z.id || z.key),
-      sort: Number(z.sort ?? z.order ?? 0) || 0
-    })).filter(r => r.id);
-    for (const r of rows) {
-      await pool.query(
-        "INSERT INTO zones(id, name, sort) VALUES($1,$2,$3) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, sort=EXCLUDED.sort",
-        [r.id, r.name, r.sort]
-      );
-    }
-  }
-
-  if (dc === 0) {
-    const devices = readJsonSafe(DEVICES_FILE, {});
-    const rows = Object.values(devices).map(d => ({
-      id: d.id,
-      name: d.name || d.title || d.id,
-      zone: d.zone || d.zone_id || d.zoneId || d.area,
-      method: (d.method || 'GET').toUpperCase(),
-      url: d.url || d.href || ''
-    })).filter(r => r.id);
-    for (const r of rows) {
-      await pool.query(
-        "INSERT INTO devices(id, name, zone_id, method, url) VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url",
-        [r.id, r.name, r.zone, r.method, r.url]
-      );
-    }
-  }
-
-  if (uc === 0) {
-    const users = readJsonSafe(USERS_FILE, {});
-    const rows = Object.values(users).map(u => ({
-      id: u.id,
-      fio: u.fio || u.name || u.fullname || u.id,
-      phone: normalizePhone(u.phone),
-      role: u.role || 'user',
-      status: u.status || 'active',
-      pin: u.pin ? String(u.pin) : null,
-      zones: Array.isArray(u.zones) ? u.zones : []
-    })).filter(r => r.id && r.phone);
-    for (const r of rows) {
-      await pool.query(
-        "INSERT INTO users(id,fio,phone,role,status,pin,zones) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO UPDATE SET fio=EXCLUDED.fio, phone=EXCLUDED.phone, role=EXCLUDED.role, status=EXCLUDED.status, pin=EXCLUDED.pin, zones=EXCLUDED.zones",
-        [r.id, r.fio, r.phone, r.role, r.status, r.pin, r.zones]
-      );
-    }
-  }
-
-  _dbReady = true;
-}
-
-async function upsertUserDb(u) {
-  const phone = normalizePhone(u.phone);
-  await pool.query(
-    "INSERT INTO users(id,fio,phone,role,status,pin,zones) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO UPDATE SET fio=EXCLUDED.fio, phone=EXCLUDED.phone, role=EXCLUDED.role, status=EXCLUDED.status, pin=EXCLUDED.pin, zones=EXCLUDED.zones",
-    [u.id, u.fio || '', phone, u.role || 'user', u.status || 'active', u.pin ? String(u.pin) : null, Array.isArray(u.zones) ? u.zones : []]
-  );
-}
-
-async function deleteUserDb(id) {
-  await pool.query("DELETE FROM users WHERE id=$1", [id]);
-}
-
-async function upsertDeviceDb(d) {
-  await pool.query(
-    "INSERT INTO devices(id,name,zone_id,method,url) VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url",
-    [d.id, d.name || d.id, d.zone || null, (d.method || 'GET').toUpperCase(), d.url || '']
-  );
-}
-
-async function deleteDeviceDb(id) {
-  await pool.query("DELETE FROM devices WHERE id=$1", [id]);
-}
+'use strict';
 
 require('dotenv').config();
-const path = require('path');
-const fs = require('fs');
+
 const express = require('express');
 const session = require('express-session');
-const axios = require('axios');
+const path = require('path');
+const crypto = require('crypto');
+
+const { dbQuery, ensureSchema } = require('./db');
 
 const app = express();
 
-// Helpers available in all EJS templates
-app.use((req, res, next) => {
-  res.locals.qs = (obj = {}) => {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(obj)) {
-      if (v === undefined || v === null || v === '') continue;
-      params.append(k, String(v));
-    }
-    const q = params.toString();
-    return q ? `?${q}` : '';
-  };
-  next();
-});
+// --- базовые настройки ---
+const PORT = Number(process.env.PORT || 8080);
+const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-railway';
 
-const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'dev_secret_change_me';
+app.disable('x-powered-by');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const ZONES_FILE = path.join(DATA_DIR, 'zones.json');
-const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
-const ROLES_FILE = path.join(DATA_DIR, 'roles.json');
-const LOGS_FILE = path.join(DATA_DIR, 'logs.json');
-const TRANSIT_FILE = path.join(DATA_DIR, 'transit_events.json');
-const AUDIT_FILE = path.join(DATA_DIR, 'audit.json');
+app.use(
+  session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
+  })
+);
 
-function readJson(file, fallback) {
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'ejs');
+app.engine('ejs', require('ejs').__express);
+
+// статика (если есть)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// --- утилиты ---
+function digitsOnly(s) {
+  return String(s || '').replace(/[^\d]/g, '');
+}
+
+function genPin(len = 4) {
+  const n = crypto.randomInt(0, 10 ** len);
+  return String(n).padStart(len, '0');
+}
+
+function toMapById(rows) {
+  const out = {};
+  (rows || []).forEach((r) => {
+    out[r.id] = r;
+  });
+  return out;
+}
+
+async function appendTransitEvent({ point, event, source, result, session: sessionId }) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf-8'));
+    await dbQuery(
+      `INSERT INTO public.transit_events(datetime, point, event, source, result, session)
+       VALUES (NOW(), $1, $2, $3, $4, $5)`,
+      [point, event, source || null, result || null, sessionId || null]
+    );
   } catch (e) {
-    return fallback;
+    // не падаем из-за логов
   }
-}
-function writeJson(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-
-async function loadAll() {
-  if (!USE_DB) return loadAllFs();
-  await ensureDbSeeded();
-
-  const zonesRows = await dbQuery(`SELECT id, name, sort FROM zones ORDER BY sort NULLS LAST, name ASC`);
-  const deviceRows = await dbQuery(`SELECT id, name, zone_id AS zone, method, url FROM devices ORDER BY id ASC`);
-  const userRows = await dbQuery(`SELECT id, fio, phone, role, status, pin, zones FROM users ORDER BY id ASC`);
-  const auditRows = await dbQuery(`SELECT ts, actor, action, object_type, object_id, ip, details FROM audit ORDER BY ts DESC LIMIT 500`);
-  const transitRows = await dbQuery(`SELECT ts, point, event, actor, result, session_id FROM transit_events ORDER BY ts DESC LIMIT 500`);
-
-  const zones = {};
-  for (const r of zonesRows) zones[r.id] = { id: r.id, name: r.name, sort: r.sort ?? 0 };
-
-  const devices = {};
-  for (const r of deviceRows) devices[r.id] = { id: r.id, name: r.name, zone: r.zone, method: (r.method || 'GET').toUpperCase(), url: r.url };
-
-  const users = {};
-  for (const r of userRows) users[r.id] = {
-    id: r.id,
-    fio: r.fio,
-    phone: r.phone,
-    role: r.role || 'user',
-    status: r.status || 'active',
-    pin: r.pin,
-    zones: Array.isArray(r.zones) ? r.zones : [],
-  };
-
-  // роли держим как раньше в JSON (чтобы не ломать UI)
-  const roles = readJsonSafe(ROLES_FILE, { admin: 'Admin', user: 'User' });
-
-    const audit = auditRows.map(r => {
-    const d = r.details || null;
-    const details = (d && typeof d === 'object') ? d : null;
-    const actorId = r.actor || null;
-    const actorFio = details?.actorFio || users[actorId]?.fio || null;
-    const actorPhone = details?.actorPhone || users[actorId]?.phone || null;
-    return {
-      ts: r.ts,
-      actorId,
-      actorFio,
-      actorPhone,
-      action: r.action,
-      targetType: r.object_type,
-      targetId: r.object_id,
-      ip: r.ip,
-      details
-    };
-  });
-
-  const transit = transitRows.map(r => ({
-    datetime: r.ts,
-    point: r.point,
-    event: r.event,
-    source: r.actor,
-    result: r.result,
-    session: r.session_id
-  }));
-
-  return { users, zones, devices, roles, audit, transit };
-
-}
-
-function loadAllFs() {
-
-  return {
-    users: readJson(USERS_FILE, {}),
-    zones: readJson(ZONES_FILE, {}),
-    devices: readJson(DEVICES_FILE, {}),
-    roles: readJson(ROLES_FILE, {}),
-    logs: readJson(LOGS_FILE, []),
-    transit: readJson(TRANSIT_FILE, []),
-    audit: readJson(AUDIT_FILE, []),
-  };
-}
-
-function findUserIdByPhone(users, phoneRaw) {
-  const phone = String(phoneRaw || '').replace(/\D/g, '');
-  for (const [id, u] of Object.entries(users)) {
-    if (String(u.phone || '').replace(/\D/g, '') === phone) return id;
-  }
-  return null;
-}
-
-function userPin(u) {
-  // Если pin не задан, используем последние 4 цифры телефона как "пин по умолчанию"
-  const phone = String(u.phone || '').replace(/\D/g, '');
-  const fallback = phone.length >= 4 ? phone.slice(-4) : '';
-  return String(u.pin || fallback);
-}
-
-function isAdmin(u) {
-  return u && (u.role === 'admin');
-}
-
-
-function devicePointLabel(device, deviceId) {
-  const name = (device?.name || deviceId || 'Точка');
-  const n = name.toLowerCase();
-  let kind = 'Устройство';
-  if (n.includes('шлагбаум')) kind = 'Шлагбаум';
-  else if (n.includes('ворота')) kind = 'Ворота';
-  else if (n.includes('двер')) kind = 'Дверь';
-  else if (n.includes('калит')) kind = 'Дверь';
-  return `${kind}: ${name}`;
-}
-
-async function appendTransitEvent({ point, event, source, result, session }) {
-  try {
-    if (USE_DB) {
-      await pool.query(
-        `INSERT INTO transit_events(ts, point, event, actor, result, session_id)
-         VALUES (NOW(), $1, $2, $3, $4, $5)`,
-        [point || null, event || null, source || null, result || null, session || null]
-      );
-      return;
-    }
-    const { transit } = await loadAll();
-    transit.push({
-      datetime: new Date().toISOString(),
-      point,
-      event,
-      source: source || null,
-      result,
-      session: session || null
-    });
-    if (transit.length > 10000) transit.splice(0, transit.length - 10000);
-    writeJson(TRANSIT_FILE, transit);
-  } catch (e) {}
-}
-
-
-function getTransitFilterOptions(transitList) {
-  const points = new Set();
-  const events = new Set();
-  for (const e of transitList) {
-    if (e?.point) points.add(String(e.point));
-    if (e?.event) events.add(String(e.event));
-  }
-  return {
-    points: Array.from(points).sort((a,b)=>a.localeCompare(b,'ru')),
-    events: Array.from(events).sort((a,b)=>a.localeCompare(b,'ru')),
-  };
-}
-
-function applyTransitFilters(list, q) {
-  const point = (q.point || '').trim();
-  const event = (q.event || '').trim();
-  const dateFrom = (q.date_from || '').trim(); // YYYY-MM-DD
-  const dateTo = (q.date_to || '').trim();     // YYYY-MM-DD
-
-  let from = null, to = null;
-  if (dateFrom) {
-    const d = new Date(dateFrom + 'T00:00:00');
-    if (!isNaN(d.getTime())) from = d;
-  }
-  if (dateTo) {
-    const d = new Date(dateTo + 'T23:59:59.999');
-    if (!isNaN(d.getTime())) to = d;
-  }
-
-  return list.filter(e => {
-    if (point && String(e.point || '') !== point) return false;
-    if (event && String(e.event || '') !== event) return false;
-
-    if (from || to) {
-      const dt = new Date(e.datetime);
-      if (isNaN(dt.getTime())) return false;
-      if (from && dt < from) return false;
-      if (to && dt > to) return false;
-    }
-    return true;
-  });
-}
-
-function transitToCsvRows(list) {
-  const header = ['Дата/время','Точка','Событие','Пользователь/источник','Результат','Сессия'];
-  const rows = list.map(e => ([
-    e?.datetime ? new Date(e.datetime).toLocaleString('ru-RU') : '',
-    e?.point || '',
-    e?.event || '',
-    e?.source || '',
-    e?.result || '',
-    e?.session || ''
-  ]));
-  return [header, ...rows];
-}
-
-function sendCsv(res, filename, rows) {
-  // Simple RFC4180 CSV with ; separator (часто удобнее для RU Excel)
-  const sep = ';';
-  const escape = (v) => {
-    const s = String(v ?? '');
-    if (s.includes('"') || s.includes('\n') || s.includes('\r') || s.includes(sep)) {
-      return '"' + s.replace(/"/g,'""') + '"';
-    }
-    return s;
-  };
-  const csv = rows.map(r => r.map(escape).join(sep)).join('\r\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  // BOM для корректного UTF-8 в Excel
-  res.send('\ufeff' + csv);
 }
 
 async function appendAudit(req, action, targetType, targetId, details) {
   try {
-    const ip =
-      req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() ||
-      req.socket?.remoteAddress ||
-      null;
-
-    if (USE_DB) {
-      const actorId = req.session?.userId || null;
-      let actorFio = null;
-      let actorPhone = null;
-      if (actorId) {
-        try {
-          const r = await pool.query('SELECT fio, phone FROM users WHERE id=$1', [actorId]);
-          actorFio = r.rows[0]?.fio || null;
-          actorPhone = r.rows[0]?.phone || null;
-        } catch (e) {}
-      }
-
-      await pool.query(
-        `INSERT INTO audit(ts, actor, action, object_type, object_id, ip, details)
-         VALUES (NOW(), $1,$2,$3,$4,$5,$6)`,
-        [
-          actorId,
-          action,
-          targetType,
-          targetId,
-          ip,
-          details ? JSON.stringify({ ...details, actorFio, actorPhone }) : JSON.stringify({ actorFio, actorPhone })
-        ]
-      );
-      return;
-    }
-
-    const { logs } = loadAllFs();
-    logs.unshift({
-      ts: new Date().toISOString(),
-      actorId: req.session?.userId || null,
-      action,
-      targetType,
-      targetId,
-      ip,
-      details: details || null
-    });
-    while (logs.length > 1000) logs.pop();
-    writeJson(LOGS_FILE, logs);
-  } catch (e) {}
+    const actor = req.session?.user || null;
+    await dbQuery(
+      `INSERT INTO public.audit(ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua)
+       VALUES (NOW(), $1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        actor?.id || null,
+        actor?.phone || null,
+        actor?.fio || null,
+        action,
+        targetType,
+        targetId,
+        details ? JSON.stringify(details) : null,
+        req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket?.remoteAddress || null,
+        req.headers['user-agent'] || null,
+      ]
+    );
+  } catch (e) {
+    // ignore
+  }
 }
 
-async function openDevice(device) {
-  if (device.method === 'GET') {
-    return axios.get(device.url, {
-      timeout: 5000,
-      auth: device.auth ? { username: device.auth.user, password: device.auth.pass } : undefined
-    });
-  }
-  throw new Error('Неизвестный метод устройства: ' + device.method);
+async function loadAll() {
+  // Важно: никаких ORDER BY sort если колонки нет — ensureSchema её добавит.
+  const [users, zones, devices] = await Promise.all([
+    dbQuery(`SELECT id,fio,phone,pin,role,zones,is_active FROM public.users ORDER BY created_at ASC`),
+    dbQuery(`SELECT id,name,sort FROM public.zones ORDER BY sort ASC, name ASC`),
+    dbQuery(`SELECT id,name,zone_id,method,url,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
+  ]);
+
+  return {
+    users: toMapById(users.rows.map((u) => ({
+      id: u.id,
+      fio: u.fio,
+      phone: u.phone,
+      pin: u.pin,
+      role: u.role || 'user',
+      zones: u.zones || [],
+      is_active: u.is_active !== false,
+    }))),
+    zones: toMapById(zones.rows.map((z) => ({ id: z.id, name: z.name, sort: z.sort ?? 0 }))),
+    devices: toMapById(devices.rows.map((d) => ({
+      id: d.id,
+      name: d.name,
+      zoneId: d.zone_id,
+      method: d.method,
+      url: d.url,
+      sort: d.sort ?? 0,
+      is_active: d.is_active !== false,
+    }))),
+  };
 }
 
 function authRequired(req, res, next) {
-  if (!req.session.userId) return res.redirect('/login');
+  if (!req.session?.user) return res.redirect('/login');
   next();
 }
 
-async function adminRequired(req, res, next) {
-  const { users } = await loadAll();
-  const u = users[req.session.userId];
-  if (!u || !isAdmin(u)) return res.status(403).send('Доступ запрещён');
+function adminRequired(req, res, next) {
+  if (!req.session?.user) return res.redirect('/login');
+  if (req.session.user.role !== 'admin') return res.status(403).send('Доступ запрещён');
   next();
 }
 
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-app.use('/public', express.static(path.join(__dirname, 'public')));
-app.use(session({
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { httpOnly: true }
-}));
-
-app.get('/login', async (req, res) => {
-  res.render('login', { error: null, title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
+// --- health ---
+app.get('/health', async (req, res) => {
+  try {
+    await dbQuery('SELECT 1 AS ok');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
 });
 
-app.post('/login', async (req, res) => {
-  const { users } = await loadAll();
-  const { phone, pin } = req.body;
-
-  const userId = findUserIdByPhone(users, phone);
-  if (!userId) return res.status(401).render('login', { error: 'Телефон не найден', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
-
-  const u = users[userId];
-  if (u.status && u.status !== 'active') {
-    return res.status(403).render('login', { error: 'Пользователь не активен', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
-  }
-
-  const expected = userPin(u);
-  if (String(pin || '').trim() !== expected) {
-    return res.status(401).render('login', { error: 'Неверный PIN', title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
-  }
-
-  req.session.userId = userId;
-  // audit login
-  await appendAudit(req, 'login', 'user', userId, { phone: u.phone });
-  res.redirect('/');
-});
-
-app.get('/logout', async (req, res) => {
-  await appendAudit(req, 'logout', 'user', req.session.userId, null);
-  req.session.destroy(() => res.redirect('/login'));
-});
-
-app.get('/', authRequired, async (req, res) => {
-  const { users, zones, devices } = await loadAll();
-  const user = users[req.session.userId];
-
-  const allowedZones = new Set(user.zones || []);
-  const allowedDevices = Object.entries(devices)
-    .filter(([id, d]) => allowedZones.has(d.zone))
-    .map(([id, d]) => ({ id, ...d, zoneName: zones[d.zone]?.name || d.zone }));
-
-  // группировка по зонам
-  const byZone = {};
-  for (const d of allowedDevices) {
-    const key = d.zone;
-    byZone[key] = byZone[key] || { zone: key, zoneName: d.zoneName, devices: [] };
-    byZone[key].devices.push(d);
-  }
-
-  res.render('dashboard', {
-    user,
-    byZone: Object.values(byZone).sort((a,b)=>a.zoneName.localeCompare(b.zoneName,'ru')),
-    title: 'Зоны • Parking Git',
-    bodyClass: 'theme-premium page-dashboard'
+// --- login/logout ---
+app.get('/login', (req, res) => {
+  res.render('login', {
+    title: 'Вход • Parking GIT',
+    bodyClass: 'auth-page',
+    error: null,
   });
 });
 
-app.post('/api/open/:deviceId', authRequired, async (req, res) => {
-  const deviceId = req.params.deviceId;
-  const { users, devices, logs } = await loadAll();
-  const user = users[req.session.userId];
-  const device = devices[deviceId];
-
-  if (!device) return res.status(404).json({ ok: false, error: 'Устройство не найдено' });
-
-  const allowedZones = new Set(user.zones || []);
-  if (!allowedZones.has(device.zone)) return res.status(403).json({ ok: false, error: 'Нет доступа к зоне' });
+app.post('/login', async (req, res) => {
+  const phoneIn = digitsOnly(req.body.phone);
+  const pinIn = digitsOnly(req.body.pin);
 
   try {
-    await openDevice(device);
-await appendTransitEvent({
-  point: devicePointLabel(device, deviceId),
-  event: 'Открытие',
-  source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
-  result: 'Успешно',
-  session: req.sessionID || null
-});
-res.json({ ok: true });
+    const r = await dbQuery(
+      `SELECT id,fio,phone,pin,role,zones,is_active
+       FROM public.users
+       WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1
+       LIMIT 1`,
+      [phoneIn]
+    );
+
+    const u = r.rows[0];
+    if (!u || u.is_active === false) {
+      return res.status(401).render('login', { title: 'Вход • Parking GIT', bodyClass: 'auth-page', error: 'Телефон не найден' });
+    }
+
+    const expectedPin = digitsOnly(u.pin) || phoneIn.slice(-4);
+    if (pinIn !== expectedPin) {
+      return res.status(401).render('login', { title: 'Вход • Parking GIT', bodyClass: 'auth-page', error: 'Неверный PIN' });
+    }
+
+    req.session.user = {
+      id: u.id,
+      fio: u.fio,
+      phone: u.phone,
+      role: u.role || 'user',
+      zones: u.zones || [],
+    };
+
+    await appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
+    return res.redirect('/');
   } catch (e) {
-    await appendTransitEvent({
-  point: devicePointLabel(device, deviceId),
-  event: 'Ошибка',
-  source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
-  result: 'Ошибка: ' + String(e.message || e),
-  session: req.sessionID || null
-});
-res.status(500).json({ ok: false, error: 'Ошибка открытия: ' + (e.message || e) });
+    return res.status(500).render('login', { title: 'Вход • Parking GIT', bodyClass: 'auth-page', error: 'Ошибка БД: ' + String(e?.message || e) });
   }
 });
 
+app.post('/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/login'));
+});
 
+// --- dashboard ---
+app.get('/', authRequired, async (req, res) => {
+  const { zones, devices } = await loadAll();
+  const user = req.session.user;
+
+  const allowedZoneIds = Array.isArray(user.zones) ? user.zones : [];
+  const devicesArr = Object.values(devices).filter((d) => d.is_active !== false);
+
+  // группируем устройства по зонам доступа пользователя
+  const byZone = [];
+  allowedZoneIds.forEach((zid) => {
+    const z = zones[zid];
+    const dz = devicesArr.filter((d) => d.zoneId === zid);
+    if (z && dz.length) {
+      byZone.push({ zoneId: zid, zoneName: z.name, devices: dz });
+    }
+  });
+
+  res.render('dashboard', {
+    title: 'Parking GIT',
+    bodyClass: 'dash-page',
+    user,
+    byZone,
+  });
+});
+
+// --- API open device ---
+app.post('/api/open/:deviceId', authRequired, async (req, res) => {
+  const deviceId = String(req.params.deviceId);
+  const { zones, devices } = await loadAll();
+  const user = req.session.user;
+
+  const d = devices[deviceId];
+  if (!d || d.is_active === false) return res.status(404).json({ ok: false, error: 'Устройство не найдено' });
+
+  const allowed = Array.isArray(user.zones) && user.zones.includes(d.zoneId);
+  if (!allowed) return res.status(403).json({ ok: false, error: 'Нет доступа' });
+
+  // В этом шаблоне мы просто логируем событие. Реальный вызов реле/контроллера можно добавить позже.
+  await appendTransitEvent({
+    point: zones[d.zoneId]?.name || d.zoneId,
+    event: 'open',
+    source: user.phone || user.id,
+    result: 'ok',
+    session: String(req.sessionID || ''),
+  });
+
+  await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId });
+  return res.json({ ok: true });
+});
+
+// --- logs ---
 app.get('/logs', authRequired, async (req, res) => {
-  const { users, transit } = await loadAll();
-  const user = users[req.session.userId];
+  const user = req.session.user;
 
-  const fio = String(user.fio || '').trim();
-  const phone = String(user.phone || '').replace(/\D/g, '');
+  const filters = {
+    point: req.query.point || '',
+    event: req.query.event || '',
+    date_from: req.query.date_from || '',
+    date_to: req.query.date_to || '',
+  };
 
-  const base = transit
-    .slice()
-    .reverse()
-    .filter(e => {
-      const src = String(e.source || '');
-      const srcDigits = src.replace(/\D/g, '');
-      return (fio && src.includes(fio)) || (phone && srcDigits.includes(phone));
-    });
+  const wh = [];
+  const args = [];
+  const push = (sql, val) => {
+    args.push(val);
+    wh.push(sql.replace('$X', `$${args.length}`));
+  };
 
-  const options = getTransitFilterOptions(base);
-  const filtered = applyTransitFilters(base, req.query).slice(0, 500);
+  if (filters.point) push(`point = $X`, filters.point);
+  if (filters.event) push(`event = $X`, filters.event);
+  if (filters.date_from) push(`datetime >= ($X::date)`, filters.date_from);
+  if (filters.date_to) push(`datetime < (($X::date) + interval '1 day')`, filters.date_to);
+
+  const whereSql = wh.length ? `WHERE ${wh.join(' AND ')}` : '';
+
+  const r = await dbQuery(
+    `SELECT datetime, point, event, source, result, session
+     FROM public.transit_events
+     ${whereSql}
+     ORDER BY datetime DESC
+     LIMIT 500`,
+    args
+  );
+
+  // options for filters
+  const pts = await dbQuery(`SELECT DISTINCT point FROM public.transit_events ORDER BY point ASC LIMIT 200`);
+  const evs = await dbQuery(`SELECT DISTINCT event FROM public.transit_events ORDER BY event ASC LIMIT 200`);
 
   res.render('logs', {
-    title: 'Журнал событий (транзитные проходы) — мои',
-    logs: filtered,
+    title: 'Журнал транзита',
+    bodyClass: 'logs-page',
     user,
-    bodyClass: 'theme-premium',
-    options,
-    filters: {
-      point: (req.query.point || '').trim(),
-      event: (req.query.event || '').trim(),
-      date_from: (req.query.date_from || '').trim(),
-      date_to: (req.query.date_to || '').trim()
-    },
-    exportUrlBase: '/logs.csv'
+    logs: r.rows,
+    filters,
+    options: { points: pts.rows.map((x) => x.point).filter(Boolean), events: evs.rows.map((x) => x.event).filter(Boolean) },
+    exportUrlBase: '/logs.csv',
   });
 });
 
 app.get('/logs.csv', authRequired, async (req, res) => {
-  const { users, transit } = await loadAll();
-  const user = users[req.session.userId];
+  const r = await dbQuery(
+    `SELECT datetime, point, event, source, result, session
+     FROM public.transit_events
+     ORDER BY datetime DESC
+     LIMIT 500`
+  );
 
-  const fio = String(user.fio || '').trim();
-  const phone = String(user.phone || '').replace(/\D/g, '');
-
-  const base = transit
-    .slice()
-    .reverse()
-    .filter(e => {
-      const src = String(e.source || '');
-      const srcDigits = src.replace(/\D/g, '');
-      return (fio && src.includes(fio)) || (phone && srcDigits.includes(phone));
-    });
-
-  const filtered = applyTransitFilters(base, req.query);
-  const rows = transitToCsvRows(filtered);
-  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  sendCsv(res, `transit-my-${stamp}.csv`, rows);
+  const lines = ['datetime,point,event,source,result,session'];
+  r.rows.forEach((l) => {
+    const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    lines.push([l.datetime, l.point, l.event, l.source, l.result, l.session].map(esc).join(','));
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.send(lines.join('\n'));
 });
 
-
-
-app.get('/admin/logs', authRequired, adminRequired, async (req, res) => {
-  res.redirect('/admin/transit');
-});
-
-
-// ------------------- ADMIN -------------------
-app.get('/admin', authRequired, adminRequired, async (req, res) => {
-  res.redirect('/admin/users');
-});
-
-app.get('/admin/users', authRequired, adminRequired, async (req, res) => {
-  const { users, zones, roles } = await loadAll();
-  res.render('admin_users', { users, zones, roles, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
-});
-
-
-app.post('/admin/users/new', authRequired, adminRequired, async (req, res) => {
-  const { users } = await loadAll();
-  const fio = String(req.body.fio || '').trim();
-  const phone = String(req.body.phone || '').trim();
-  const role = String(req.body.role || 'user').trim();
-  const status = String(req.body.status || 'active').trim();
-  const pinRaw = String(req.body.pin || '').trim();
-
-  if (!phone) return res.status(400).send('Телефон обязателен');
-  // ensure phone unique
-  const existing = findUserIdByPhone(users, phone);
-  if (existing) return res.status(400).send('Пользователь с таким телефоном уже есть');
-
-  const id = 'u_' + Date.now();
-  const zonesBody = req.body.zones;
-  let zones = [];
-  if (Array.isArray(zonesBody)) zones = zonesBody;
-  else if (typeof zonesBody === 'string') zones = [zonesBody];
-
-  users[id] = {
-    fio: fio || '',
-    phone,
-    role,
-    status,
-    zones,
-  };
-  if (pinRaw) users[id].pin = pinRaw;
-
-  writeJson(USERS_FILE, users);
-  await appendAudit(req, 'user_create', 'user', id, { fio, phone, role, status, zones });
-  res.redirect('/admin/users');
-});
-
-app.post('/admin/users/:id/delete', authRequired, adminRequired, async (req, res) => {
-  const userId = req.params.id;
-  const { users } = await loadAll();
-  const u = users[userId];
-  if (!u) return res.status(404).send('User not found');
-  delete users[userId];
-  writeJson(USERS_FILE, users);
-  await appendAudit(req, 'user_delete', 'user', userId, { phone: u.phone, fio: u.fio });
-  res.redirect('/admin/users');
-});
-
-app.post('/admin/users/:id', authRequired, adminRequired, async (req, res) => {
-  const userId = req.params.id;
-  const { users } = await loadAll();
-  if (!users[userId]) return res.status(404).send('User not found');
-
-  users[userId].fio = req.body.fio ?? users[userId].fio;
-  users[userId].phone = req.body.phone ?? users[userId].phone;
-  users[userId].role = req.body.role ?? users[userId].role;
-  users[userId].status = req.body.status ?? users[userId].status;
-
-  // zones[] (checkboxes)
-  const zones = req.body.zones;
-  if (Array.isArray(zones)) users[userId].zones = zones;
-  if (typeof zones === 'string') users[userId].zones = [zones];
-  if (!zones) users[userId].zones = [];
-
-  // pin optional
-  if (req.body.pin !== undefined && String(req.body.pin).trim() !== '') {
-    users[userId].pin = String(req.body.pin).trim();
-  }
-
-  writeJson(USERS_FILE, users);
-  await appendAudit(req, 'user_update', 'user', userId, { fio: users[userId].fio, phone: users[userId].phone, role: users[userId].role, status: users[userId].status, zones: users[userId].zones, pinSet: (users[userId].pin?true:false) });
-  res.redirect('/admin/users');
-});
-
-app.get('/admin/devices', authRequired, adminRequired, async (req, res) => {
-  const { users, devices, zones } = await loadAll();
-  res.render('admin_devices', { devices, zones, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
-});
-
-
-app.post('/admin/devices/new', authRequired, adminRequired, async (req, res) => {
-  const id = String(req.body.id || '').trim();
-  if (!id) return res.status(400).send('Device id required');
-  req.params.id = id;
-  // переиспользуем обработчик /admin/devices/:id
-  res.redirect(307, '/admin/devices/' + encodeURIComponent(id));
-});
-app.post('/admin/devices/:id', authRequired, adminRequired, async (req, res) => {
-  const deviceId = req.params.id;
-  const { devices } = await loadAll();
-  if (!devices[deviceId]) devices[deviceId] = {};
-  devices[deviceId].name = req.body.name || deviceId;
-  devices[deviceId].zone = req.body.zone;
-  devices[deviceId].type = req.body.type || 'rodos';
-  devices[deviceId].method = req.body.method || 'GET';
-
-  // URL: можно хранить сразу с http://user:pass@ip/...
-  devices[deviceId].url = req.body.url;
-
-  writeJson(DEVICES_FILE, devices);
-  await appendAudit(req, 'device_upsert', 'device', deviceId, { name: devices[deviceId].name, zone: devices[deviceId].zone, method: devices[deviceId].method, url: devices[deviceId].url });
-  res.redirect('/admin/devices');
-});
-
-app.post('/admin/devices/:id/delete', authRequired, adminRequired, async (req, res) => {
-  const deviceId = req.params.id;
-  const { devices } = await loadAll();
-  delete devices[deviceId];
-  writeJson(DEVICES_FILE, devices);
-  await appendAudit(req, 'device_upsert', 'device', deviceId, { name: devices[deviceId].name, zone: devices[deviceId].zone, method: devices[deviceId].method, url: devices[deviceId].url });
-  res.redirect('/admin/devices');
-});
-
-
-app.get('/admin/transit', authRequired, adminRequired, async (req, res) => {
-  const { users, transit } = await loadAll();
-  const user = users[req.session.userId];
-
-  const base = transit.slice().reverse(); // newest first
-  const options = getTransitFilterOptions(base);
-  const filtered = applyTransitFilters(base, req.query).slice(0, 2000);
-
-  res.render('logs', {
-    title: 'Журнал событий (транзитные проходы) — все',
-    logs: filtered,
-    user,
-    bodyClass: 'theme-premium',
-    options,
-    filters: {
-      point: (req.query.point || '').trim(),
-      event: (req.query.event || '').trim(),
-      date_from: (req.query.date_from || '').trim(),
-      date_to: (req.query.date_to || '').trim()
-    },
-    exportUrlBase: '/admin/transit.csv'
+// --- admin: users/devices/zones/audit ---
+app.get('/admin/users', adminRequired, async (req, res) => {
+  const { users, zones } = await loadAll();
+  res.render('admin_users', {
+    title: 'Админ • Пользователи',
+    bodyClass: 'admin-page',
+    user: req.session.user,
+    users: Object.values(users),
+    zones: Object.values(zones),
   });
 });
 
-app.get('/admin/transit.csv', authRequired, adminRequired, async (req, res) => {
-  const { transit } = await loadAll();
-  const base = transit.slice().reverse();
-  const filtered = applyTransitFilters(base, req.query);
-  const rows = transitToCsvRows(filtered);
-  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  sendCsv(res, `transit-all-${stamp}.csv`, rows);
+app.post('/admin/users/create', adminRequired, async (req, res) => {
+  const id = crypto.randomUUID();
+  const fio = String(req.body.fio || '').trim();
+  const phone = digitsOnly(req.body.phone);
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
+  const zones = Array.isArray(req.body.zones) ? req.body.zones : (req.body.zones ? [req.body.zones] : []);
+
+  // PIN: автоген
+  const pin = genPin(4);
+
+  await dbQuery(
+    `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,true)`,
+    [id, fio || null, phone, pin, role, JSON.stringify(zones)]
+  );
+
+  await appendAudit(req, 'create', 'user', id, { fio, phone, role, zones, pin_generated: true });
+  res.redirect('/admin/users');
 });
 
+app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
+  const id = String(req.params.id);
+  const fio = String(req.body.fio || '').trim();
+  const phone = digitsOnly(req.body.phone);
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
+  const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
+  const zones = Array.isArray(req.body.zones) ? req.body.zones : (req.body.zones ? [req.body.zones] : []);
 
-app.get('/admin/audit', authRequired, adminRequired, async (req, res) => {
-  const { users, audit } = await loadAll();
-  const list = audit.slice().reverse().slice(0, 1000);
-  res.render('admin_audit', { title: 'Админ • Журнал действий', entries: list, user: users[req.session.userId], bodyClass: 'theme-premium' });
+  await dbQuery(
+    `UPDATE public.users
+     SET fio=$2, phone=$3, role=$4, zones=$5::jsonb, is_active=$6
+     WHERE id=$1`,
+    [id, fio || null, phone, role, JSON.stringify(zones), isActive]
+  );
+
+  await appendAudit(req, 'update', 'user', id, { fio, phone, role, zones, isActive });
+  res.redirect('/admin/users');
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ SKUD WebApp запущен: http://localhost:${PORT}`);
-  console.log(`PIN по умолчанию: последние 4 цифры телефона (если pin не задан в users.json)`);
+app.post('/admin/users/:id/reset_pin', adminRequired, async (req, res) => {
+  const id = String(req.params.id);
+  const pin = genPin(4);
+  await dbQuery(`UPDATE public.users SET pin=$2 WHERE id=$1`, [id, pin]);
+  await appendAudit(req, 'reset_pin', 'user', id, { pin_generated: true });
+  res.redirect('/admin/users');
 });
+
+app.get('/admin/devices', adminRequired, async (req, res) => {
+  const { devices, zones } = await loadAll();
+  res.render('admin_devices', {
+    title: 'Админ • Устройства',
+    bodyClass: 'admin-page',
+    user: req.session.user,
+    devices: Object.values(devices),
+    zones: Object.values(zones),
+  });
+});
+
+app.post('/admin/devices/create', adminRequired, async (req, res) => {
+  const id = String(req.body.id || '').trim() || crypto.randomUUID();
+  const name = String(req.body.name || '').trim();
+  const zoneId = String(req.body.zoneId || '').trim();
+  const method = String(req.body.method || 'http').trim();
+  const url = String(req.body.url || '').trim();
+
+  await dbQuery(
+    `INSERT INTO public.devices(id,name,zone_id,method,url,sort,is_active)
+     VALUES ($1,$2,$3,$4,$5,0,true)
+     ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url`,
+    [id, name, zoneId || null, method, url]
+  );
+
+  await appendAudit(req, 'create', 'device', id, { name, zoneId, method, url });
+  res.redirect('/admin/devices');
+});
+
+app.post('/admin/devices/:id/update', adminRequired, async (req, res) => {
+  const id = String(req.params.id);
+  const name = String(req.body.name || '').trim();
+  const zoneId = String(req.body.zoneId || '').trim();
+  const method = String(req.body.method || 'http').trim();
+  const url = String(req.body.url || '').trim();
+  const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
+
+  await dbQuery(
+    `UPDATE public.devices
+     SET name=$2, zone_id=$3, method=$4, url=$5, is_active=$6
+     WHERE id=$1`,
+    [id, name, zoneId || null, method, url, isActive]
+  );
+
+  await appendAudit(req, 'update', 'device', id, { name, zoneId, method, url, isActive });
+  res.redirect('/admin/devices');
+});
+
+app.get('/admin/zones', adminRequired, async (req, res) => {
+  const { zones } = await loadAll();
+  res.render('admin_zones', {
+    title: 'Админ • Зоны',
+    bodyClass: 'admin-page',
+    user: req.session.user,
+    zones: Object.values(zones),
+  });
+});
+
+app.post('/admin/zones/create', adminRequired, async (req, res) => {
+  const id = String(req.body.id || '').trim() || crypto.randomUUID();
+  const name = String(req.body.name || '').trim();
+  await dbQuery(
+    `INSERT INTO public.zones(id,name,sort)
+     VALUES ($1,$2,0)
+     ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
+    [id, name]
+  );
+  await appendAudit(req, 'create', 'zone', id, { name });
+  res.redirect('/admin/zones');
+});
+
+app.get('/admin/audit', adminRequired, async (req, res) => {
+  const r = await dbQuery(
+    `SELECT ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua
+     FROM public.audit
+     ORDER BY ts DESC
+     LIMIT 500`
+  );
+
+  const entries = r.rows.map((e) => ({
+    ts: e.ts,
+    actorId: e.actor_id,
+    actorPhone: e.actor_phone,
+    actorFio: e.actor_fio,
+    action: e.action,
+    targetType: e.target_type,
+    targetId: e.target_id,
+    details: (() => {
+      try {
+        return e.details ? JSON.parse(e.details) : null;
+      } catch {
+        return e.details;
+      }
+    })(),
+    ip: e.ip,
+    ua: e.ua,
+  }));
+
+  res.render('admin_audit', {
+    user: req.session.user,
+    bodyClass: 'admin-page',
+    entries,
+  });
+});
+
+// --- bootstrap: create default admin if missing ---
+async function ensureDefaultAdmin() {
+  const adminPhone = digitsOnly(process.env.ADMIN_PHONE || '79991112233');
+  const adminPin = digitsOnly(process.env.ADMIN_PIN || '1234');
+
+  const exists = await dbQuery(
+    `SELECT id FROM public.users WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1 LIMIT 1`,
+    [adminPhone]
+  );
+
+  if (exists.rows.length) return;
+
+  const id = 'admin';
+  const fio = process.env.ADMIN_FIO || 'Администратор';
+  // если зон ещё нет — оставляем пусто, можно назначить в админке
+  await dbQuery(
+    `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
+     VALUES ($1,$2,$3,$4,'admin','[]'::jsonb,true)
+     ON CONFLICT (id) DO NOTHING`,
+    [id, fio, adminPhone, adminPin]
+  );
+
+  console.log('✅ Создан админ по умолчанию:', adminPhone, 'PIN:', adminPin);
+}
+
+(async () => {
+  try {
+    await ensureSchema();
+    await ensureDefaultAdmin();
+  } catch (e) {
+    console.error('DB init error:', e);
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Parking GIT запущен: http://0.0.0.0:${PORT}`);
+  });
+})();

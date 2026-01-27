@@ -1,48 +1,23 @@
-# SKUD WebApp
+# Parking GIT (Node.js + PostgreSQL)
 
-Это веб‑приложение сделано из вашего проекта Telegram‑бота: берёт те же `users.json / devices.json / zones.json / logs.json`
-и даёт веб‑панель для открытия устройств (RODOS / любые HTTP‑устройства по GET).
+## Railway (самый быстрый способ)
+1) Залей проект в GitHub.
+2) Railway → New Project → Deploy from GitHub Repo.
+3) Railway → Add Plugin → PostgreSQL.
+4) В сервисе **Web** → Variables:
+   - `DATABASE_URL` (обычно Railway добавляет сам после подключения Postgres)
+   - `SESSION_SECRET` (любой длинный текст)
+   - (опционально) `ADMIN_PHONE`, `ADMIN_PIN`, `ADMIN_FIO`
+5) Web → Settings → Start Command: `npm start` (по умолчанию)
+6) Web → Networking → Domain → Generate Domain.
 
-## Быстрый старт
+Приложение само создаст таблицы в БД и (если нет такого телефона) создаст админа по `ADMIN_PHONE`.
 
-1) Установить Node.js 18+  
-2) В корне проекта:
-
+## Локально
 ```bash
 npm i
-cp .env.example .env
+set DATABASE_URL=postgresql://...
+set SESSION_SECRET=dev
 npm start
 ```
-
-Откроется: `http://localhost:3000`
-
-## Вход
-
-- Логин: **телефон**
-- PIN:
-  - если в `users.json` у пользователя есть поле `"pin"` — используется оно
-  - иначе **по умолчанию PIN = последние 4 цифры телефона**
-
-## Что умеет
-
-- Панель пользователя: устройства по зонам доступа, кнопка «Открыть»
-- Логи пользователя: `/logs`
-- Админка (только роль `admin`):
-  - Пользователи: `/admin/users` (роли/статусы/зоны/PIN)
-  - Устройства: `/admin/devices` (добавить/удалить/редактировать)
-  - Все логи: `/admin/logs`
-
-## Важно по сети
-
-Вызов устройств идёт **с сервера**, где крутится Node.js.
-Если вы запускаете приложение на своём ПК, то ПК должен видеть IP‑адреса устройств (например `192.168.1.x`).
-
-## Файлы данных
-
-Лежат в папке `data/`:
-- `users.json`
-- `devices.json`
-- `zones.json`
-- `logs.json`
-
-Можно редактировать вручную или через админку.
+Открой: http://localhost:8080

@@ -1,76 +1,50 @@
-<%- include('partials/header', { title: 'Админ • Журнал действий', user, bodyClass }) %>
+<%- include('partials/header', { title: 'Админ • Аудит', bodyClass, user }) %>
 
-<div class="page-head">
+<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
-    <div class="text-muted small">Админ-панель</div>
-    <h1 class="h4 mb-0">Журнал действий</h1>
+    <h1 class="h4 mb-0">Аудит</h1>
+    <div class="text-muted small">Последние 500 действий</div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <a class="btn btn-sm btn-outline-secondary" href="/admin/users">Пользователи</a>
-    <a class="btn btn-sm btn-outline-secondary" href="/admin/devices">Устройства</a>
+  <div class="d-flex gap-2">
+    <a class="btn btn-soft" href="/admin/users">Пользователи</a>
+    <a class="btn btn-soft" href="/">На главную</a>
   </div>
 </div>
 
-<div class="audit-mobile-list d-block d-md-none">
-  <% entries.forEach(e => { %>
-    <div class="lux-card mb-2">
-      <div class="lux-card-head">
-        <div class="lux-badge"><%= e.action %></div>
-        <div class="lux-muted"><%= (e.ts ? new Date(e.ts).toLocaleString('ru-RU') : '-') %></div>
-      </div>
-      <div class="lux-card-body">
-        <div class="lux-row"><span class="lux-label">Кто</span><span class="lux-value"><%= e.actorFio || '—' %></span></div>
-        <div class="lux-row"><span class="lux-label">Телефон</span><span class="lux-value lux-muted"><%= e.actorPhone || e.actorId || '—' %></span></div>
-        <div class="lux-row"><span class="lux-label">Объект</span><span class="lux-value"><span class="lux-muted"><%= e.targetType %>:</span> <code class="mono"><%= e.targetId %></code></span></div>
-        <% if (e.ip) { %><div class="lux-row"><span class="lux-label">IP</span><span class="lux-value mono"><%= e.ip %></span></div><% } %>
-        <% if (e.details) { %>
-          <div class="lux-details"><pre class="lux-pre"><%= JSON.stringify(e.details, null, 2) %></pre></div>
-        <% } %>
-      </div>
-    </div>
-  <% }) %>
-  <% if (!entries.length) { %>
-    <div class="lux-card"><div class="lux-card-body lux-muted">Пока пусто.</div></div>
-  <% } %>
-</div>
-
-<div class="card shadow-sm d-none d-md-block">
+<div class="card card-glass p-2 p-md-3">
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 table-lux">
-      <thead class="table-light">
+    <table class="table table-dark table-hover align-middle mb-0">
+      <thead>
         <tr>
-          <th style="min-width:170px">Дата</th>
-          <th style="min-width:180px">Кто</th>
-          <th style="min-width:160px">Действие</th>
-          <th style="min-width:220px">Объект</th>
-          <th>Детали</th>
+          <th>Время</th>
+          <th>Кто</th>
+          <th>Действие</th>
+          <th>Цель</th>
+          <th class="d-none d-md-table-cell">Детали</th>
         </tr>
       </thead>
       <tbody>
-        <% entries.forEach(e => { %>
-          <tr>
-            <td class="small lux-muted">
-              <%= (e.ts ? new Date(e.ts).toLocaleString('ru-RU') : '-') %>
-            </td>
-            <td>
-              <div class="fw-semibold"><%= e.actorFio || '—' %></div>
-              <div class="lux-muted small"><%= e.actorPhone || e.actorId || '' %></div>
-            </td>
-            <td><span class="badge badge-lux"><%= e.action %></span></td>
-            <td class="small">
-              <div><span class="lux-muted"><%= e.targetType %>:</span> <code class="mono"><%= e.targetId %></code></div>
-              <% if (e.ip) { %><div class="lux-muted"><%= e.ip %></div><% } %>
-            </td>
-            <td class="small lux-muted">
-              <pre class="lux-pre"><%= e.details ? JSON.stringify(e.details, null, 2) : '' %></pre>
-            </td>
-          </tr>
-        <% }) %>
-        <% if (!entries.length) { %>
-          <tr><td colspan="5" class="lux-muted p-4">Пока пусто.</td></tr>
-        <% } %>
+      <% (entries || []).forEach(function(e){ 
+          const ts = e.ts ? new Date(e.ts) : null;
+          const fmt = ts ? ts.toISOString().replace('T',' ').replace('Z','') : '';
+      %>
+        <tr>
+          <td class="small text-muted"><%= fmt %></td>
+          <td>
+            <div class="fw-semibold"><%= e.actorFio || '—' %></div>
+            <div class="small text-muted"><%= e.actorPhone || '' %></div>
+          </td>
+          <td><span class="badge badge-soft"><%= e.action %></span></td>
+          <td class="small">
+            <div class="text-muted"><%= e.targetType %></div>
+            <div class="fw-semibold"><%= e.targetId %></div>
+          </td>
+          <td class="d-none d-md-table-cell small text-muted" style="max-width:420px; white-space:normal;">
+            <%= typeof e.details === 'string' ? e.details : JSON.stringify(e.details || {}) %>
+          </td>
+        </tr>
+      <% }) %>
       </tbody>
     </table>
   </div>
 </div>
-<%- include('partials/footer') %>
