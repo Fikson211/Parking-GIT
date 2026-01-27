@@ -1,3 +1,113 @@
+
+const USE_DB = !!process.env.DATABASE_URL;
+const { pool, initSchema } = require('./db');
+
+function normalizePhone(input) {
+  return String(input || '').replace(/\D+/g, '');
+}
+
+// safe read without throwing (если файл не существует)
+function readJsonSafe(filePath, fallback) {
+  try {
+    return readJson(filePath, fallback);
+  } catch (e) {
+    return fallback;
+  }
+}
+
+async function dbQuery(sql, params) {
+  if (!USE_DB) return [];
+  const res = await pool.query(sql, params);
+  return res.rows;
+}
+
+let _dbReady = false;
+async function ensureDbSeeded() {
+  if (!USE_DB || _dbReady) return;
+  await initSchema();
+
+  // seed zones/devices/users from JSON если в БД пусто
+  const [{ c: zc }] = await dbQuery("SELECT COUNT(*)::int AS c FROM zones");
+  const [{ c: dc }] = await dbQuery("SELECT COUNT(*)::int AS c FROM devices");
+  const [{ c: uc }] = await dbQuery("SELECT COUNT(*)::int AS c FROM users");
+
+  if (zc === 0) {
+    const zones = readJsonSafe(ZONES_FILE, {});
+    const rows = Object.values(zones).map(z => ({
+      id: z.id || z.key || z.zone || z.code,
+      name: z.name || z.title || String(z.id || z.key),
+      sort: Number(z.sort ?? z.order ?? 0) || 0
+    })).filter(r => r.id);
+    for (const r of rows) {
+      await pool.query(
+        "INSERT INTO zones(id, name, sort) VALUES($1,$2,$3) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, sort=EXCLUDED.sort",
+        [r.id, r.name, r.sort]
+      );
+    }
+  }
+
+  if (dc === 0) {
+    const devices = readJsonSafe(DEVICES_FILE, {});
+    const rows = Object.values(devices).map(d => ({
+      id: d.id,
+      name: d.name || d.title || d.id,
+      zone: d.zone || d.zone_id || d.zoneId || d.area,
+      method: (d.method || 'GET').toUpperCase(),
+      url: d.url || d.href || ''
+    })).filter(r => r.id);
+    for (const r of rows) {
+      await pool.query(
+        "INSERT INTO devices(id, name, zone_id, method, url) VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url",
+        [r.id, r.name, r.zone, r.method, r.url]
+      );
+    }
+  }
+
+  if (uc === 0) {
+    const users = readJsonSafe(USERS_FILE, {});
+    const rows = Object.values(users).map(u => ({
+      id: u.id,
+      fio: u.fio || u.name || u.fullname || u.id,
+      phone: normalizePhone(u.phone),
+      role: u.role || 'user',
+      status: u.status || 'active',
+      pin: u.pin ? String(u.pin) : null,
+      zones: Array.isArray(u.zones) ? u.zones : []
+    })).filter(r => r.id && r.phone);
+    for (const r of rows) {
+      await pool.query(
+        "INSERT INTO users(id,fio,phone,role,status,pin,zones) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO UPDATE SET fio=EXCLUDED.fio, phone=EXCLUDED.phone, role=EXCLUDED.role, status=EXCLUDED.status, pin=EXCLUDED.pin, zones=EXCLUDED.zones",
+        [r.id, r.fio, r.phone, r.role, r.status, r.pin, r.zones]
+      );
+    }
+  }
+
+  _dbReady = true;
+}
+
+async function upsertUserDb(u) {
+  const phone = normalizePhone(u.phone);
+  await pool.query(
+    "INSERT INTO users(id,fio,phone,role,status,pin,zones) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO UPDATE SET fio=EXCLUDED.fio, phone=EXCLUDED.phone, role=EXCLUDED.role, status=EXCLUDED.status, pin=EXCLUDED.pin, zones=EXCLUDED.zones",
+    [u.id, u.fio || '', phone, u.role || 'user', u.status || 'active', u.pin ? String(u.pin) : null, Array.isArray(u.zones) ? u.zones : []]
+  );
+}
+
+async function deleteUserDb(id) {
+  await pool.query("DELETE FROM users WHERE id=$1", [id]);
+}
+
+async function upsertDeviceDb(d) {
+  await pool.query(
+    "INSERT INTO devices(id,name,zone_id,method,url) VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url",
+    [d.id, d.name || d.id, d.zone || null, (d.method || 'GET').toUpperCase(), d.url || '']
+  );
+}
+
+async function deleteDeviceDb(id) {
+  await pool.query("DELETE FROM devices WHERE id=$1", [id]);
+}
+
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
@@ -44,13 +154,44 @@ function writeJson(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-function loadAll() {
-  const users = readJson(USERS_FILE, {});
-  // авто-генерация PIN для всех, у кого он отсутствует
-  try { if (ensurePins(users)) writeJson(USERS_FILE, users); } catch (e) {}
+
+async function loadAll() {
+  if (!USE_DB) return loadAllFs();
+  await ensureDbSeeded();
+
+  const zonesRows = await dbQuery(`SELECT id, name, sort FROM zones ORDER BY sort NULLS LAST, name ASC`);
+  const deviceRows = await dbQuery(`SELECT id, name, zone_id AS zone, method, url FROM devices ORDER BY id ASC`);
+  const userRows = await dbQuery(`SELECT id, fio, phone, role, status, pin, zones FROM users ORDER BY id ASC`);
+  const auditRows = await dbQuery(`SELECT ts, actor, action, object_type, object_id, ip, details FROM audit ORDER BY ts DESC LIMIT 500`);
+  const transitRows = await dbQuery(`SELECT ts, point, event, actor, result, session_id FROM transit_events ORDER BY ts DESC LIMIT 500`);
+
+  const zones = {};
+  for (const r of zonesRows) zones[r.id] = { id: r.id, name: r.name, sort: r.sort ?? 0 };
+
+  const devices = {};
+  for (const r of deviceRows) devices[r.id] = { id: r.id, name: r.name, zone: r.zone, method: (r.method || 'GET').toUpperCase(), url: r.url };
+
+  const users = {};
+  for (const r of userRows) users[r.id] = {
+    id: r.id,
+    fio: r.fio,
+    phone: r.phone,
+    role: r.role || 'user',
+    status: r.status || 'active',
+    pin: r.pin,
+    zones: Array.isArray(r.zones) ? r.zones : [],
+  };
+
+  // роли держим как раньше в JSON (чтобы не ломать UI)
+  const roles = readJsonSafe(ROLES_FILE, { admin: 'Admin', user: 'User' });
+
+  return { users, zones, devices, roles, logs: auditRows, transit_events: transitRows };
+}
+
+function loadAllFs() {
 
   return {
-    users,
+    users: readJson(USERS_FILE, {}),
     zones: readJson(ZONES_FILE, {}),
     devices: readJson(DEVICES_FILE, {}),
     roles: readJson(ROLES_FILE, {}),
@@ -69,28 +210,10 @@ function findUserIdByPhone(users, phoneRaw) {
 }
 
 function userPin(u) {
-  // PIN: если не задан — считаем, что он будет сгенерирован и сохранён (см. ensurePins()).
-  return String(u?.pin || '');
-}
-
-function generatePin(len = 6) {
-  let s = '';
-  for (let i = 0; i < len; i++) s += String(Math.floor(Math.random() * 10));
-  if (/^0+$/.test(s)) s = '1' + s.slice(1);
-  return s;
-}
-
-function ensurePins(users) {
-  let changed = false;
-  for (const u of Object.values(users || {})) {
-    if (!u) continue;
-    const pin = String(u.pin || '').trim();
-    if (!pin) {
-      u.pin = generatePin(6);
-      changed = true;
-    }
-  }
-  return changed;
+  // Если pin не задан, используем последние 4 цифры телефона как "пин по умолчанию"
+  const phone = String(u.phone || '').replace(/\D/g, '');
+  const fallback = phone.length >= 4 ? phone.slice(-4) : '';
+  return String(u.pin || fallback);
 }
 
 function isAdmin(u) {
@@ -111,7 +234,7 @@ function devicePointLabel(device, deviceId) {
 
 function appendTransitEvent({ point, event, source, result, session }) {
   try {
-    const { transit } = loadAll();
+    const { transit } = await loadAll();
     transit.push({
       datetime: new Date().toISOString(),
       point,
@@ -203,28 +326,26 @@ function sendCsv(res, filename, rows) {
   res.send('\ufeff' + csv);
 }
 
-function appendAudit(req, action, targetType, targetId, details) {
-  try {
-    const { users, audit } = loadAll();
-    const actor = users[req.session?.userId] || null;
-    audit.push({
-      ts: new Date().toISOString(),
-      actorId: req.session?.userId || null,
-      actorPhone: actor?.phone || null,
-      actorFio: actor?.fio || null,
-      action,
-      targetType,
-      targetId,
-      details: String(details).replace(/[^\d]/g,'') || null,
-      ip: req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket?.remoteAddress || null,
-      ua: req.headers['user-agent'] || null
-    });
-    // keep last 5000
-    if (audit.length > 5000) audit.splice(0, audit.length - 5000);
-    writeJson(AUDIT_FILE, audit);
-  } catch (e) {
-    // ignore audit errors
+function appendAudit(entry) {
+  if (USE_DB) {
+    // fire-and-forget
+    pool.query(
+      "INSERT INTO audit(ts, actor, action, object_type, object_id, ip, details) VALUES (NOW(), $1,$2,$3,$4,$5,$6)",
+      [
+        entry.actor || null,
+        entry.action || null,
+        entry.object_type || null,
+        entry.object_id || null,
+        entry.ip || null,
+        entry.details ? JSON.stringify(entry.details) : null
+      ]
+    ).catch(() => {});
+    return;
   }
+  const { logs } = loadAllFs();
+  logs.unshift({ ts: new Date().toISOString(), ...entry });
+  while (logs.length > 1000) logs.pop();
+  writeJson(LOGS_FILE, logs);
 }
 
 async function openDevice(device) {
@@ -243,7 +364,7 @@ function authRequired(req, res, next) {
 }
 
 function adminRequired(req, res, next) {
-  const { users } = loadAll();
+  const { users } = await loadAll();
   const u = users[req.session.userId];
   if (!u || !isAdmin(u)) return res.status(403).send('Доступ запрещён');
   next();
@@ -261,12 +382,12 @@ app.use(session({
   cookie: { httpOnly: true }
 }));
 
-app.get('/login', (req, res) => {
+app.get('/login', async (req, res) => {
   res.render('login', { error: null, title: 'Вход • Parking Git', bodyClass: 'theme-premium page-login' });
 });
 
-app.post('/login', (req, res) => {
-  const { users } = loadAll();
+app.post('/login', async (req, res) => {
+  const { users } = await loadAll();
   const { phone, pin } = req.body;
 
   const userId = findUserIdByPhone(users, phone);
@@ -288,13 +409,13 @@ app.post('/login', (req, res) => {
   res.redirect('/');
 });
 
-app.get('/logout', (req, res) => {
+app.get('/logout', async (req, res) => {
   appendAudit(req, 'logout', 'user', req.session.userId, null);
   req.session.destroy(() => res.redirect('/login'));
 });
 
 app.get('/', authRequired, (req, res) => {
-  const { users, zones, devices } = loadAll();
+  const { users, zones, devices } = await loadAll();
   const user = users[req.session.userId];
 
   const allowedZones = new Set(user.zones || []);
@@ -320,7 +441,7 @@ app.get('/', authRequired, (req, res) => {
 
 app.post('/api/open/:deviceId', authRequired, async (req, res) => {
   const deviceId = req.params.deviceId;
-  const { users, devices, logs } = loadAll();
+  const { users, devices, logs } = await loadAll();
   const user = users[req.session.userId];
   const device = devices[deviceId];
 
@@ -353,7 +474,7 @@ res.status(500).json({ ok: false, error: 'Ошибка открытия: ' + (e.
 
 
 app.get('/logs', authRequired, (req, res) => {
-  const { users, transit } = loadAll();
+  const { users, transit } = await loadAll();
   const user = users[req.session.userId];
 
   const fio = String(user.fio || '').trim();
@@ -388,7 +509,7 @@ app.get('/logs', authRequired, (req, res) => {
 });
 
 app.get('/logs.csv', authRequired, (req, res) => {
-  const { users, transit } = loadAll();
+  const { users, transit } = await loadAll();
   const user = users[req.session.userId];
 
   const fio = String(user.fio || '').trim();
@@ -422,13 +543,13 @@ app.get('/admin', authRequired, adminRequired, (req, res) => {
 });
 
 app.get('/admin/users', authRequired, adminRequired, (req, res) => {
-  const { users, zones, roles } = loadAll();
+  const { users, zones, roles } = await loadAll();
   res.render('admin_users', { users, zones, roles, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
 });
 
 
 app.post('/admin/users/new', authRequired, adminRequired, (req, res) => {
-  const { users } = loadAll();
+  const { users } = await loadAll();
   const fio = String(req.body.fio || '').trim();
   const phone = String(req.body.phone || '').trim();
   const role = String(req.body.role || 'user').trim();
@@ -453,8 +574,7 @@ app.post('/admin/users/new', authRequired, adminRequired, (req, res) => {
     status,
     zones,
   };
-  // PIN: если не указан — генерируем автоматически
-  users[id].pin = pinRaw || generatePin(6);
+  if (pinRaw) users[id].pin = pinRaw;
 
   writeJson(USERS_FILE, users);
   appendAudit(req, 'user_create', 'user', id, { fio, phone, role, status, zones });
@@ -463,7 +583,7 @@ app.post('/admin/users/new', authRequired, adminRequired, (req, res) => {
 
 app.post('/admin/users/:id/delete', authRequired, adminRequired, (req, res) => {
   const userId = req.params.id;
-  const { users } = loadAll();
+  const { users } = await loadAll();
   const u = users[userId];
   if (!u) return res.status(404).send('User not found');
   delete users[userId];
@@ -474,7 +594,7 @@ app.post('/admin/users/:id/delete', authRequired, adminRequired, (req, res) => {
 
 app.post('/admin/users/:id', authRequired, adminRequired, (req, res) => {
   const userId = req.params.id;
-  const { users } = loadAll();
+  const { users } = await loadAll();
   if (!users[userId]) return res.status(404).send('User not found');
 
   users[userId].fio = req.body.fio ?? users[userId].fio;
@@ -499,7 +619,7 @@ app.post('/admin/users/:id', authRequired, adminRequired, (req, res) => {
 });
 
 app.get('/admin/devices', authRequired, adminRequired, (req, res) => {
-  const { users, devices, zones } = loadAll();
+  const { users, devices, zones } = await loadAll();
   res.render('admin_devices', { devices, zones, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
 });
 
@@ -513,7 +633,7 @@ app.post('/admin/devices/new', authRequired, adminRequired, (req, res) => {
 });
 app.post('/admin/devices/:id', authRequired, adminRequired, (req, res) => {
   const deviceId = req.params.id;
-  const { devices } = loadAll();
+  const { devices } = await loadAll();
   if (!devices[deviceId]) devices[deviceId] = {};
   devices[deviceId].name = req.body.name || deviceId;
   devices[deviceId].zone = req.body.zone;
@@ -530,7 +650,7 @@ app.post('/admin/devices/:id', authRequired, adminRequired, (req, res) => {
 
 app.post('/admin/devices/:id/delete', authRequired, adminRequired, (req, res) => {
   const deviceId = req.params.id;
-  const { devices } = loadAll();
+  const { devices } = await loadAll();
   delete devices[deviceId];
   writeJson(DEVICES_FILE, devices);
   appendAudit(req, 'device_upsert', 'device', id, { name, zone, method, url });
@@ -539,7 +659,7 @@ app.post('/admin/devices/:id/delete', authRequired, adminRequired, (req, res) =>
 
 
 app.get('/admin/transit', authRequired, adminRequired, (req, res) => {
-  const { users, transit } = loadAll();
+  const { users, transit } = await loadAll();
   const user = users[req.session.userId];
 
   const base = transit.slice().reverse(); // newest first
@@ -563,7 +683,7 @@ app.get('/admin/transit', authRequired, adminRequired, (req, res) => {
 });
 
 app.get('/admin/transit.csv', authRequired, adminRequired, (req, res) => {
-  const { transit } = loadAll();
+  const { transit } = await loadAll();
   const base = transit.slice().reverse();
   const filtered = applyTransitFilters(base, req.query);
   const rows = transitToCsvRows(filtered);
@@ -573,12 +693,12 @@ app.get('/admin/transit.csv', authRequired, adminRequired, (req, res) => {
 
 
 app.get('/admin/audit', authRequired, adminRequired, (req, res) => {
-  const { users, audit } = loadAll();
+  const { users, audit } = await loadAll();
   const list = audit.slice().reverse().slice(0, 1000);
   res.render('admin_audit', { title: 'Админ • Журнал действий', entries: list, user: users[req.session.userId], bodyClass: 'theme-premium' });
 });
 
 app.listen(PORT, () => {
   console.log(`✅ SKUD WebApp запущен: http://localhost:${PORT}`);
-  console.log(`PIN: генерируется автоматически (если не задан)`);
+  console.log(`PIN по умолчанию: последние 4 цифры телефона (если pin не задан в users.json)`);
 });
