@@ -1,5 +1,5 @@
 
-const USE_DB = !!process.env.DATABASE_URL;
+const USE_DB = !!(process.env.DATABASE_URL || process.env.DATABASE_URL_POSTGRES || process.env.POSTGRES_URL);
 const { pool, initSchema } = require('./db');
 
 function normalizePhone(input) {
@@ -185,7 +185,36 @@ async function loadAll() {
   // роли держим как раньше в JSON (чтобы не ломать UI)
   const roles = readJsonSafe(ROLES_FILE, { admin: 'Admin', user: 'User' });
 
-  return { users, zones, devices, roles, logs: auditRows, transit_events: transitRows };
+    const audit = auditRows.map(r => {
+    const d = r.details || null;
+    const details = (d && typeof d === 'object') ? d : null;
+    const actorId = r.actor || null;
+    const actorFio = details?.actorFio || users[actorId]?.fio || null;
+    const actorPhone = details?.actorPhone || users[actorId]?.phone || null;
+    return {
+      ts: r.ts,
+      actorId,
+      actorFio,
+      actorPhone,
+      action: r.action,
+      targetType: r.object_type,
+      targetId: r.object_id,
+      ip: r.ip,
+      details
+    };
+  });
+
+  const transit = transitRows.map(r => ({
+    datetime: r.ts,
+    point: r.point,
+    event: r.event,
+    source: r.actor,
+    result: r.result,
+    session: r.session_id
+  }));
+
+  return { users, zones, devices, roles, audit, transit };
+
 }
 
 function loadAllFs() {
@@ -232,8 +261,16 @@ function devicePointLabel(device, deviceId) {
   return `${kind}: ${name}`;
 }
 
-function appendTransitEvent({ point, event, source, result, session }) {
+async function appendTransitEvent({ point, event, source, result, session }) {
   try {
+    if (USE_DB) {
+      await pool.query(
+        `INSERT INTO transit_events(ts, point, event, actor, result, session_id)
+         VALUES (NOW(), $1, $2, $3, $4, $5)`,
+        [point || null, event || null, source || null, result || null, session || null]
+      );
+      return;
+    }
     const { transit } = await loadAll();
     transit.push({
       datetime: new Date().toISOString(),
@@ -243,14 +280,10 @@ function appendTransitEvent({ point, event, source, result, session }) {
       result,
       session: session || null
     });
-    // keep last 10000
     if (transit.length > 10000) transit.splice(0, transit.length - 10000);
     writeJson(TRANSIT_FILE, transit);
-  } catch (e) {
-    // ignore transit log errors
-  }
+  } catch (e) {}
 }
-
 
 
 function getTransitFilterOptions(transitList) {
@@ -326,26 +359,53 @@ function sendCsv(res, filename, rows) {
   res.send('\ufeff' + csv);
 }
 
-function appendAudit(entry) {
-  if (USE_DB) {
-    // fire-and-forget
-    pool.query(
-      "INSERT INTO audit(ts, actor, action, object_type, object_id, ip, details) VALUES (NOW(), $1,$2,$3,$4,$5,$6)",
-      [
-        entry.actor || null,
-        entry.action || null,
-        entry.object_type || null,
-        entry.object_id || null,
-        entry.ip || null,
-        entry.details ? JSON.stringify(entry.details) : null
-      ]
-    ).catch(() => {});
-    return;
-  }
-  const { logs } = loadAllFs();
-  logs.unshift({ ts: new Date().toISOString(), ...entry });
-  while (logs.length > 1000) logs.pop();
-  writeJson(LOGS_FILE, logs);
+async function appendAudit(req, action, targetType, targetId, details) {
+  try {
+    const ip =
+      req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      null;
+
+    if (USE_DB) {
+      const actorId = req.session?.userId || null;
+      let actorFio = null;
+      let actorPhone = null;
+      if (actorId) {
+        try {
+          const r = await pool.query('SELECT fio, phone FROM users WHERE id=$1', [actorId]);
+          actorFio = r.rows[0]?.fio || null;
+          actorPhone = r.rows[0]?.phone || null;
+        } catch (e) {}
+      }
+
+      await pool.query(
+        `INSERT INTO audit(ts, actor, action, object_type, object_id, ip, details)
+         VALUES (NOW(), $1,$2,$3,$4,$5,$6)`,
+        [
+          actorId,
+          action,
+          targetType,
+          targetId,
+          ip,
+          details ? JSON.stringify({ ...details, actorFio, actorPhone }) : JSON.stringify({ actorFio, actorPhone })
+        ]
+      );
+      return;
+    }
+
+    const { logs } = loadAllFs();
+    logs.unshift({
+      ts: new Date().toISOString(),
+      actorId: req.session?.userId || null,
+      action,
+      targetType,
+      targetId,
+      ip,
+      details: details || null
+    });
+    while (logs.length > 1000) logs.pop();
+    writeJson(LOGS_FILE, logs);
+  } catch (e) {}
 }
 
 async function openDevice(device) {
@@ -363,7 +423,7 @@ function authRequired(req, res, next) {
   next();
 }
 
-function adminRequired(req, res, next) {
+async function adminRequired(req, res, next) {
   const { users } = await loadAll();
   const u = users[req.session.userId];
   if (!u || !isAdmin(u)) return res.status(403).send('Доступ запрещён');
@@ -405,23 +465,23 @@ app.post('/login', async (req, res) => {
 
   req.session.userId = userId;
   // audit login
-  appendAudit(req, 'login', 'user', userId, { phone: u.phone });
+  await appendAudit(req, 'login', 'user', userId, { phone: u.phone });
   res.redirect('/');
 });
 
 app.get('/logout', async (req, res) => {
-  appendAudit(req, 'logout', 'user', req.session.userId, null);
+  await appendAudit(req, 'logout', 'user', req.session.userId, null);
   req.session.destroy(() => res.redirect('/login'));
 });
 
-app.get('/', authRequired, (req, res) => {
+app.get('/', authRequired, async (req, res) => {
   const { users, zones, devices } = await loadAll();
   const user = users[req.session.userId];
 
   const allowedZones = new Set(user.zones || []);
   const allowedDevices = Object.entries(devices)
     .filter(([id, d]) => allowedZones.has(d.zone))
-    .map(([id, d]) => ({ id, ...d, zoneName: zones[d.zone]?.title || d.zone }));
+    .map(([id, d]) => ({ id, ...d, zoneName: zones[d.zone]?.name || d.zone }));
 
   // группировка по зонам
   const byZone = {};
@@ -452,7 +512,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
 
   try {
     await openDevice(device);
-appendTransitEvent({
+await appendTransitEvent({
   point: devicePointLabel(device, deviceId),
   event: 'Открытие',
   source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
@@ -461,7 +521,7 @@ appendTransitEvent({
 });
 res.json({ ok: true });
   } catch (e) {
-    appendTransitEvent({
+    await appendTransitEvent({
   point: devicePointLabel(device, deviceId),
   event: 'Ошибка',
   source: user?.fio ? `Оператор: ${user.fio}` : 'Система',
@@ -473,7 +533,7 @@ res.status(500).json({ ok: false, error: 'Ошибка открытия: ' + (e.
 });
 
 
-app.get('/logs', authRequired, (req, res) => {
+app.get('/logs', authRequired, async (req, res) => {
   const { users, transit } = await loadAll();
   const user = users[req.session.userId];
 
@@ -508,7 +568,7 @@ app.get('/logs', authRequired, (req, res) => {
   });
 });
 
-app.get('/logs.csv', authRequired, (req, res) => {
+app.get('/logs.csv', authRequired, async (req, res) => {
   const { users, transit } = await loadAll();
   const user = users[req.session.userId];
 
@@ -532,23 +592,23 @@ app.get('/logs.csv', authRequired, (req, res) => {
 
 
 
-app.get('/admin/logs', authRequired, adminRequired, (req, res) => {
+app.get('/admin/logs', authRequired, adminRequired, async (req, res) => {
   res.redirect('/admin/transit');
 });
 
 
 // ------------------- ADMIN -------------------
-app.get('/admin', authRequired, adminRequired, (req, res) => {
+app.get('/admin', authRequired, adminRequired, async (req, res) => {
   res.redirect('/admin/users');
 });
 
-app.get('/admin/users', authRequired, adminRequired, (req, res) => {
+app.get('/admin/users', authRequired, adminRequired, async (req, res) => {
   const { users, zones, roles } = await loadAll();
   res.render('admin_users', { users, zones, roles, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
 });
 
 
-app.post('/admin/users/new', authRequired, adminRequired, (req, res) => {
+app.post('/admin/users/new', authRequired, adminRequired, async (req, res) => {
   const { users } = await loadAll();
   const fio = String(req.body.fio || '').trim();
   const phone = String(req.body.phone || '').trim();
@@ -577,22 +637,22 @@ app.post('/admin/users/new', authRequired, adminRequired, (req, res) => {
   if (pinRaw) users[id].pin = pinRaw;
 
   writeJson(USERS_FILE, users);
-  appendAudit(req, 'user_create', 'user', id, { fio, phone, role, status, zones });
+  await appendAudit(req, 'user_create', 'user', id, { fio, phone, role, status, zones });
   res.redirect('/admin/users');
 });
 
-app.post('/admin/users/:id/delete', authRequired, adminRequired, (req, res) => {
+app.post('/admin/users/:id/delete', authRequired, adminRequired, async (req, res) => {
   const userId = req.params.id;
   const { users } = await loadAll();
   const u = users[userId];
   if (!u) return res.status(404).send('User not found');
   delete users[userId];
   writeJson(USERS_FILE, users);
-  appendAudit(req, 'user_delete', 'user', userId, { phone: u.phone, fio: u.fio });
+  await appendAudit(req, 'user_delete', 'user', userId, { phone: u.phone, fio: u.fio });
   res.redirect('/admin/users');
 });
 
-app.post('/admin/users/:id', authRequired, adminRequired, (req, res) => {
+app.post('/admin/users/:id', authRequired, adminRequired, async (req, res) => {
   const userId = req.params.id;
   const { users } = await loadAll();
   if (!users[userId]) return res.status(404).send('User not found');
@@ -614,24 +674,24 @@ app.post('/admin/users/:id', authRequired, adminRequired, (req, res) => {
   }
 
   writeJson(USERS_FILE, users);
-  appendAudit(req, 'user_update', 'user', userId, { fio: users[userId].fio, phone: users[userId].phone, role: users[userId].role, status: users[userId].status, zones: users[userId].zones, pinSet: (users[userId].pin?true:false) });
+  await appendAudit(req, 'user_update', 'user', userId, { fio: users[userId].fio, phone: users[userId].phone, role: users[userId].role, status: users[userId].status, zones: users[userId].zones, pinSet: (users[userId].pin?true:false) });
   res.redirect('/admin/users');
 });
 
-app.get('/admin/devices', authRequired, adminRequired, (req, res) => {
+app.get('/admin/devices', authRequired, adminRequired, async (req, res) => {
   const { users, devices, zones } = await loadAll();
   res.render('admin_devices', { devices, zones, msg: null, user: users[req.session.userId], bodyClass: 'theme-premium' });
 });
 
 
-app.post('/admin/devices/new', authRequired, adminRequired, (req, res) => {
+app.post('/admin/devices/new', authRequired, adminRequired, async (req, res) => {
   const id = String(req.body.id || '').trim();
   if (!id) return res.status(400).send('Device id required');
   req.params.id = id;
   // переиспользуем обработчик /admin/devices/:id
   res.redirect(307, '/admin/devices/' + encodeURIComponent(id));
 });
-app.post('/admin/devices/:id', authRequired, adminRequired, (req, res) => {
+app.post('/admin/devices/:id', authRequired, adminRequired, async (req, res) => {
   const deviceId = req.params.id;
   const { devices } = await loadAll();
   if (!devices[deviceId]) devices[deviceId] = {};
@@ -644,21 +704,21 @@ app.post('/admin/devices/:id', authRequired, adminRequired, (req, res) => {
   devices[deviceId].url = req.body.url;
 
   writeJson(DEVICES_FILE, devices);
-  appendAudit(req, 'device_upsert', 'device', id, { name, zone, method, url });
+  await appendAudit(req, 'device_upsert', 'device', deviceId, { name: devices[deviceId].name, zone: devices[deviceId].zone, method: devices[deviceId].method, url: devices[deviceId].url });
   res.redirect('/admin/devices');
 });
 
-app.post('/admin/devices/:id/delete', authRequired, adminRequired, (req, res) => {
+app.post('/admin/devices/:id/delete', authRequired, adminRequired, async (req, res) => {
   const deviceId = req.params.id;
   const { devices } = await loadAll();
   delete devices[deviceId];
   writeJson(DEVICES_FILE, devices);
-  appendAudit(req, 'device_upsert', 'device', id, { name, zone, method, url });
+  await appendAudit(req, 'device_upsert', 'device', deviceId, { name: devices[deviceId].name, zone: devices[deviceId].zone, method: devices[deviceId].method, url: devices[deviceId].url });
   res.redirect('/admin/devices');
 });
 
 
-app.get('/admin/transit', authRequired, adminRequired, (req, res) => {
+app.get('/admin/transit', authRequired, adminRequired, async (req, res) => {
   const { users, transit } = await loadAll();
   const user = users[req.session.userId];
 
@@ -682,7 +742,7 @@ app.get('/admin/transit', authRequired, adminRequired, (req, res) => {
   });
 });
 
-app.get('/admin/transit.csv', authRequired, adminRequired, (req, res) => {
+app.get('/admin/transit.csv', authRequired, adminRequired, async (req, res) => {
   const { transit } = await loadAll();
   const base = transit.slice().reverse();
   const filtered = applyTransitFilters(base, req.query);
@@ -692,7 +752,7 @@ app.get('/admin/transit.csv', authRequired, adminRequired, (req, res) => {
 });
 
 
-app.get('/admin/audit', authRequired, adminRequired, (req, res) => {
+app.get('/admin/audit', authRequired, adminRequired, async (req, res) => {
   const { users, audit } = await loadAll();
   const list = audit.slice().reverse().slice(0, 1000);
   res.render('admin_audit', { title: 'Админ • Журнал действий', entries: list, user: users[req.session.userId], bodyClass: 'theme-premium' });
