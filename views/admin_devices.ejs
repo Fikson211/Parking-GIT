@@ -1,95 +1,99 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
+<%- include('partials/header', { title: 'Устройства', user }) %>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-  <div>
-    <h1 class="h4 mb-0">Устройства</h1>
-    <div class="text-muted small">Добавляй устройства и привязывай к зонам</div>
+<div class="card">
+  <div class="topbar">
+    <div class="pill">Админ-панель</div>
+    <div class="nav">
+      <a href="/" class="pill">Дашборд</a>
+      <a href="/logs" class="pill">Журнал</a>
+      <a href="/admin/users" class="pill">Пользователи</a>
+      <a href="/admin/zones" class="pill">Зоны</a>
+      <a href="/admin/devices" class="pill" style="background:rgba(255,255,255,.12)">Устройства</a>
+      <a href="/admin/audit" class="pill">Аудит</a>
+      <a href="/logout" class="pill">Выйти</a>
+    </div>
   </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-soft" href="/admin/users">Пользователи</a>
-    <a class="btn btn-soft" href="/admin/zones">Зоны</a>
-    <a class="btn btn-soft" href="/admin/audit">Аудит</a>
-  </div>
-</div>
 
-<div class="card card-glass p-3 p-md-4 mb-3">
-  <h2 class="h6 mb-3">Добавить/обновить устройство</h2>
-  <form method="post" action="/admin/devices/create" class="row g-2">
-    <div class="col-12 col-md-3">
-      <label class="form-label small text-muted">ID</label>
-      <input class="form-control" name="id" placeholder="door_1" />
+  <h2 style="margin-top:0">Устройства</h2>
+
+  <form method="post" action="/admin/devices" style="display:grid;grid-template-columns: 220px 260px 1fr 120px 90px 90px;gap:10px;align-items:end">
+    <div>
+      <div class="muted">ID (уникальный)</div>
+      <input name="id" placeholder="gate_1" required />
     </div>
-    <div class="col-12 col-md-4">
-      <label class="form-label small text-muted">Название</label>
-      <input class="form-control" name="name" placeholder="Дверь серверная" required />
+    <div>
+      <div class="muted">Имя</div>
+      <input name="name" placeholder="Ворота 1" required />
     </div>
-    <div class="col-12 col-md-3">
-      <label class="form-label small text-muted">Зона</label>
-      <select class="form-select" name="zoneId">
-        <option value="">—</option>
+    <div>
+      <div class="muted">URL</div>
+      <input name="url" placeholder="http://..." required />
+    </div>
+    <div>
+      <div class="muted">Метод</div>
+      <select name="method">
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+      </select>
+    </div>
+    <div>
+      <div class="muted">Зона</div>
+      <select name="zone_id">
         <% zones.forEach(z => { %>
           <option value="<%= z.id %>"><%= z.name %></option>
         <% }) %>
       </select>
     </div>
-    <div class="col-6 col-md-1">
-      <label class="form-label small text-muted">Метод</label>
-      <select class="form-select" name="method">
-        <option value="http">http</option>
-        <option value="rodos">rodos</option>
+    <div>
+      <div class="muted">Сорт.</div>
+      <input name="sort" type="number" value="0" />
+    </div>
+    <div>
+      <div class="muted">Активно</div>
+      <select name="is_active">
+        <option value="true">Да</option>
+        <option value="false">Нет</option>
       </select>
     </div>
-    <div class="col-6 col-md-1">
-      <label class="form-label small text-muted">URL/IP</label>
-      <input class="form-control" name="url" placeholder="http://..." />
-    </div>
-    <div class="col-12">
-      <button class="btn btn-primary w-100 w-md-auto" type="submit">Сохранить</button>
+    <div>
+      <button type="submit">Добавить</button>
     </div>
   </form>
-</div>
 
-<div class="card card-glass p-0 overflow-hidden">
-  <div class="table-responsive">
-    <table class="table table-modern align-middle mb-0">
+  <div style="margin-top:18px;overflow:auto">
+    <table>
       <thead>
         <tr>
           <th>ID</th>
-          <th>Название</th>
+          <th>Имя</th>
           <th>Зона</th>
           <th>Метод</th>
-          <th>URL/IP</th>
-          <th>Активен</th>
+          <th>URL</th>
+          <th>Сорт.</th>
+          <th>Активно</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         <% devices.forEach(d => { %>
           <tr>
-            <form method="post" action="/admin/devices/<%= d.id %>/update">
-              <td class="text-mono"><%= d.id %></td>
-              <td><input class="form-control form-control-sm" name="name" value="<%= d.name || '' %>" /></td>
-              <td>
-                <select class="form-select form-select-sm" name="zoneId">
-                  <option value="">—</option>
-                  <% zones.forEach(z => { %>
-                    <option value="<%= z.id %>" <%= (d.zoneId===z.id)?'selected':'' %>><%= z.name %></option>
-                  <% }) %>
-                </select>
-              </td>
-              <td>
-                <select class="form-select form-select-sm" name="method">
-                  <option value="http" <%= d.method==='http'?'selected':'' %>>http</option>
-                  <option value="rodos" <%= d.method==='rodos'?'selected':'' %>>rodos</option>
-                </select>
-              </td>
-              <td><input class="form-control form-control-sm" name="url" value="<%= d.url || '' %>" /></td>
-              <td class="text-center"><input class="form-check-input" type="checkbox" name="is_active" <%= d.isActive ? 'checked' : '' %> /></td>
-              <td class="text-end"><button class="btn btn-soft btn-sm" type="submit">Обновить</button></td>
-            </form>
+            <td><%= d.id %></td>
+            <td><%= d.name %></td>
+            <td><%= d.zone_name || d.zone_id %></td>
+            <td><%= d.method %></td>
+            <td style="max-width:460px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= d.url %></td>
+            <td><%= d.sort || 0 %></td>
+            <td><%= d.is_active ? 'Да' : 'Нет' %></td>
+            <td style="white-space:nowrap">
+              <form method="post" action="/admin/devices/<%= d.id %>/delete" style="display:inline" onsubmit="return confirm('Удалить устройство?')">
+                <button class="danger" type="submit">Удалить</button>
+              </form>
+            </td>
           </tr>
         <% }) %>
       </tbody>
     </table>
   </div>
 </div>
+
+<%- include('partials/footer') %>

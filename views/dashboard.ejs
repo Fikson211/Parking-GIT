@@ -1,50 +1,39 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
+<%- include('partials/header', { title: 'Панель управления', user, bodyClass }) %>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+<div class="d-flex align-items-end justify-content-between mb-3">
   <div>
-    <h1 class="h4 mb-0">Parking GIT</h1>
-    <div class="text-muted small">Управление доступом</div>
-  </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-soft" href="/logs">Журнал транзита</a>
-    <% if (user && user.role === 'admin') { %>
-      <a class="btn btn-soft" href="/admin/users">Админка</a>
-    <% } %>
+    <div class="text-muted small">Пользователь</div>
+    <div class="h5 m-0"><%= user.fio || 'Без имени' %> <span class="badge text-bg-light border"><%= user.role %></span></div>
+    <div class="text-muted small"><%= user.phone %></div>
   </div>
 </div>
 
-<% if (!byZone || !byZone.length) { %>
-  <div class="card card-glass p-3">
-    <div class="text-muted">У вас пока нет назначенных зон/устройств. Попросите админа добавить доступ.</div>
-  </div>
+<% if (!byZone.length) { %>
+  <div class="alert alert-warning">У вас нет доступных устройств (проверьте зоны доступа в users.json или в админке).</div>
 <% } %>
 
-<div class="row g-3">
-  <% (byZone || []).forEach(z => { %>
-    <div class="col-12">
-      <div class="card card-glass">
-        <div class="card-header bg-transparent border-0 pb-0">
-          <div class="d-flex align-items-center justify-content-between">
-            <div>
-              <div class="h6 mb-0"><%= z.zoneName %></div>
-              <div class="small text-muted"><%= z.zoneId %></div>
-            </div>
-            <span class="badge badge-soft">Зона</span>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="row g-2">
-            <% (z.devices || []).forEach(d => { %>
-              <div class="col-12 col-md-6 col-lg-4">
-                <button class="btn btn-zone w-100" type="button" data-device-id="<%= d.id %>">
-                  <div class="d-flex align-items-center justify-content-between">
-                    <div class="text-start">
-                      <div class="fw-semibold"><%= d.name %></div>
-                      <div class="small text-muted"><%= d.id %></div>
-                    </div>
-                    <span class="chev">›</span>
-                  </div>
-                </button>
+<div class="accordion" id="zonesAccordion">
+  <% byZone.forEach((z, idx) => { const cid = 'zone_' + idx; %>
+    <div class="accordion-item shadow-sm rounded-4 overflow-hidden mb-2">
+      <h2 class="accordion-header" id="h_<%= cid %>">
+        <button class="accordion-button <%= idx===0 ? '' : 'collapsed' %>" type="button"
+                data-bs-toggle="collapse" data-bs-target="#c_<%= cid %>"
+                aria-expanded="<%= idx===0 ? 'true' : 'false' %>" aria-controls="c_<%= cid %>">
+          <span class="me-2">📍</span>
+          <span class="fw-semibold"><%= z.zoneName %></span>
+          <span class="ms-auto badge text-bg-light border"><%= z.devices.length %></span>
+        </button>
+      </h2>
+      <div id="c_<%= cid %>" class="accordion-collapse collapse <%= idx===0 ? 'show' : '' %>" data-bs-parent="#zonesAccordion">
+        <div class="accordion-body">
+          <div class="vstack gap-2">
+            <% z.devices.forEach(d => { %>
+              <div class="device-row d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2">
+                <div class="me-sm-3">
+                  <div class="fw-semibold"><%= d.name %></div>
+                  <div class="text-muted small"><%= d.id %></div>
+                </div>
+                <button class="btn btn-primary btn-action" onclick="openDevice('<%= d.id %>', this)">Открыть</button>
               </div>
             <% }) %>
           </div>
@@ -55,26 +44,24 @@
 </div>
 
 <script>
-  async function openDevice(id, btn){
-    btn.disabled = true;
-    btn.classList.add('loading');
-    try{
-      const r = await fetch(`/api/open/${encodeURIComponent(id)}`, { method:'POST', headers:{'Content-Type':'application/json'} });
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) throw new Error(j.error || 'Ошибка');
-      btn.classList.add('ok');
-      setTimeout(()=>btn.classList.remove('ok'), 900);
-    }catch(e){
-      alert(e.message || 'Ошибка');
-    }finally{
-      btn.disabled = false;
-      btn.classList.remove('loading');
-    }
+async function openDevice(id, btn){
+  const old = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = '...';
+  try{
+    const r = await fetch('/api/open/' + encodeURIComponent(id), { method:'POST' });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Ошибка');
+    btn.innerText = '✅';
+    setTimeout(()=>btn.innerText=old, 900);
+  }catch(e){
+    alert(e.message);
+    btn.innerText = '⚠️';
+    setTimeout(()=>btn.innerText=old, 1200);
+  }finally{
+    btn.disabled = false;
   }
-
-  document.querySelectorAll('[data-device-id]').forEach(btn=>{
-    btn.addEventListener('click', ()=>openDevice(btn.dataset.deviceId, btn));
-  });
+}
 </script>
 
 <%- include('partials/footer') %>

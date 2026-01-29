@@ -1,48 +1,61 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
+<%- include('partials/header', { title: 'Зоны', user }) %>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-  <div>
-    <h1 class="h4 mb-0">Зоны</h1>
-    <div class="text-muted small">Список зон доступа</div>
+<div class="card">
+  <div class="topbar">
+    <div class="pill">Админ-панель</div>
+    <div class="nav">
+      <a href="/" class="pill">Дашборд</a>
+      <a href="/logs" class="pill">Журнал</a>
+      <a href="/admin/users" class="pill">Пользователи</a>
+      <a href="/admin/zones" class="pill" style="background:rgba(255,255,255,.12)">Зоны</a>
+      <a href="/admin/devices" class="pill">Устройства</a>
+      <a href="/admin/audit" class="pill">Аудит</a>
+      <a href="/logout" class="pill">Выйти</a>
+    </div>
   </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-soft" href="/admin/users">Пользователи</a>
-    <a class="btn btn-soft" href="/admin/devices">Устройства</a>
-    <a class="btn btn-soft" href="/admin/audit">Аудит</a>
-  </div>
-</div>
 
-<div class="card card-glass p-3 p-md-4 mb-4">
-  <h2 class="h6 mb-3">Добавить / обновить зону</h2>
-  <form method="post" action="/admin/zones/create" class="row g-2">
-    <div class="col-12 col-md-4">
-      <input class="form-control" name="id" placeholder="ID (можно пусто)" />
+  <h2>Зоны</h2>
+
+  <form method="POST" action="/admin/zones" style="display:grid;grid-template-columns:1fr 140px 180px;gap:10px;align-items:end;">
+    <div>
+      <label class="muted">Название</label>
+      <input name="name" placeholder="Новая зона" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;" required />
     </div>
-    <div class="col-12 col-md-6">
-      <input class="form-control" name="name" placeholder="Название" required />
+    <div>
+      <label class="muted">Сорт.</label>
+      <input name="sort" type="number" value="0" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;" />
     </div>
-    <div class="col-12 col-md-2 d-grid">
-      <button class="btn btn-primary" type="submit">Сохранить</button>
+    <div>
+      <label class="muted">Активна</label>
+      <select name="is_active" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(20,20,25,.9);color:#fff;">
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
     </div>
+    <button class="btn" style="grid-column:1/-1;margin-top:8px">Добавить</button>
   </form>
-</div>
 
-<div class="card card-glass p-0 overflow-hidden">
-  <div class="table-responsive">
-    <table class="table table-dark table-hover align-middle mb-0">
+  <div style="margin-top:16px;overflow:auto">
+    <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Название</th>
+          <th>ID</th><th>Название</th><th>sort</th><th>active</th><th></th>
         </tr>
       </thead>
       <tbody>
-      <% zones.forEach(z => { %>
-        <tr>
-          <td class="text-nowrap"><code><%= z.id %></code></td>
-          <td><%= z.name %></td>
-        </tr>
-      <% }) %>
+        <% zones.forEach(z => { %>
+          <tr>
+            <td><%= z.id %></td>
+            <td><%= z.name %></td>
+            <td><%= z.sort || 0 %></td>
+            <td><%= (z.is_active === false) ? 'false' : 'true' %></td>
+            <td>
+              <form method="POST" action="/admin/zones/<%= z.id %>/delete" onsubmit="return confirm('Удалить зону?')">
+                <button class="btn" style="padding:8px 10px;background:rgba(255,70,70,.25);">Удалить</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
       </tbody>
     </table>
   </div>

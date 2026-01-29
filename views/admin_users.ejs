@@ -1,94 +1,85 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
+<%- include('partials/header', { title: 'Пользователи', user }) %>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-  <div>
-    <h1 class="h4 mb-0">Пользователи</h1>
-    <div class="text-muted small">PIN генерируется автоматически. Можно сбросить.</div>
+<div class="card">
+  <div class="topbar">
+    <div class="pill">Админ-панель</div>
+    <div class="nav">
+      <a href="/" class="pill">Дашборд</a>
+      <a href="/logs" class="pill">Журнал</a>
+      <a href="/admin/users" class="pill" style="background:rgba(255,255,255,.12)">Пользователи</a>
+      <a href="/admin/zones" class="pill">Зоны</a>
+      <a href="/admin/devices" class="pill">Устройства</a>
+      <a href="/admin/audit" class="pill">Аудит</a>
+      <a href="/logout" class="pill">Выйти</a>
+    </div>
   </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-soft" href="/admin/devices">Устройства</a>
-    <a class="btn btn-soft" href="/admin/zones">Зоны</a>
-    <a class="btn btn-soft" href="/admin/audit">Аудит</a>
-  </div>
-</div>
 
-<div class="card card-glass p-3 mb-3">
-  <h2 class="h6 mb-2">Добавить пользователя</h2>
-  <form method="post" action="/admin/users/create" class="row g-2">
-    <div class="col-12 col-md-4">
-      <input name="fio" class="form-control" placeholder="ФИО" required />
+  <h2>Пользователи</h2>
+
+  <form method="POST" action="/admin/users" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 180px;gap:10px;align-items:end;">
+    <div>
+      <label class="muted">ФИО</label>
+      <input name="fio" placeholder="Имя" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;" required />
     </div>
-    <div class="col-12 col-md-3">
-      <input name="phone" class="form-control" placeholder="Телефон (цифры)" required />
+    <div>
+      <label class="muted">Телефон</label>
+      <input name="phone" placeholder="79991112233" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;" required />
     </div>
-    <div class="col-12 col-md-2">
-      <select name="role" class="form-select">
+    <div>
+      <label class="muted">PIN</label>
+      <input name="pin" placeholder="(пусто = автоген)" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;" />
+    </div>
+    <div>
+      <label class="muted">Роль</label>
+      <select name="role" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(20,20,25,.9);color:#fff;">
         <option value="user">user</option>
         <option value="admin">admin</option>
       </select>
     </div>
-    <div class="col-12 col-md-3">
-      <button class="btn btn-gold w-100" type="submit">Создать</button>
+    <div>
+      <label class="muted">Зоны (через запятую)</label>
+      <input name="zones" placeholder="pedestrian,buffer" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;" />
     </div>
-    <div class="col-12">
-      <div class="small text-muted">Зоны можно назначить после создания (в списке ниже).</div>
+    <div>
+      <button class="btn" type="submit" style="width:100%">Добавить</button>
     </div>
   </form>
-</div>
 
-<div class="card card-glass p-0 overflow-hidden">
-  <div class="table-responsive">
-    <table class="table table-dark table-hover align-middle m-0">
+  <div style="overflow:auto;margin-top:14px;">
+    <table class="table">
       <thead>
         <tr>
+          <th>ID</th>
           <th>ФИО</th>
           <th>Телефон</th>
+          <th>PIN</th>
           <th>Роль</th>
-          <th>Зоны</th>
           <th>Активен</th>
-          <th class="text-end">Действия</th>
+          <th>Зоны</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         <% users.forEach(u => { %>
           <tr>
-            <form method="post" action="/admin/users/<%= u.id %>/update">
-              <td style="min-width:220px">
-                <input name="fio" class="form-control form-control-sm" value="<%= u.fio || '' %>" />
-              </td>
-              <td style="min-width:170px">
-                <input name="phone" class="form-control form-control-sm" value="<%= (u.phone || '').replace(/\D/g,'') %>" />
-              </td>
-              <td style="min-width:110px">
-                <select name="role" class="form-select form-select-sm">
-                  <option value="user" <%= (u.role==='user'?'selected':'') %>>user</option>
-                  <option value="admin" <%= (u.role==='admin'?'selected':'') %>>admin</option>
-                </select>
-              </td>
-              <td style="min-width:260px">
-                <div class="d-flex flex-wrap gap-1">
-                  <% zones.forEach(z => { %>
-                    <label class="zone-chip">
-                      <input class="form-check-input me-1" type="checkbox" name="zones" value="<%= z.id %>" <%= (Array.isArray(u.zones) && u.zones.includes(z.id)) ? 'checked' : '' %> />
-                      <span><%= z.name %></span>
-                    </label>
-                  <% }) %>
-                </div>
-              </td>
-              <td style="min-width:90px">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="is_active" <%= u.is_active ? 'checked' : '' %>>
-                </div>
-              </td>
-              <td class="text-end" style="min-width:230px">
-                <div class="d-flex gap-2 justify-content-end">
-                  <button class="btn btn-soft btn-sm" type="submit">Сохранить</button>
-                </form>
-                <form method="post" action="/admin/users/<%= u.id %>/reset_pin" class="m-0">
-                  <button class="btn btn-gold btn-sm" type="submit">Сброс PIN</button>
-                </form>
-                </div>
-              </td>
+            <td><%= u.id %></td>
+            <td><%= u.fio %></td>
+            <td><%= u.phone %></td>
+            <td><%= (u.pin === null ? '' : u.pin) %></td>
+            <td><%= u.role %></td>
+            <td><%= u.is_active ? 'да' : 'нет' %></td>
+            <td><%= Array.isArray(u.zones) ? u.zones.join(', ') : (u.zones || '') %></td>
+            <td style="white-space:nowrap;">
+              <form method="POST" action="/admin/users/<%= u.id %>/toggle" style="display:inline">
+                <button class="pill" type="submit">Вкл/Выкл</button>
+              </form>
+              <form method="POST" action="/admin/users/<%= u.id %>/reset-pin" style="display:inline">
+                <button class="pill" type="submit">Сброс PIN</button>
+              </form>
+              <form method="POST" action="/admin/users/<%= u.id %>/delete" style="display:inline" onsubmit="return confirm('Удалить пользователя?')">
+                <button class="pill" type="submit">Удалить</button>
+              </form>
+            </td>
           </tr>
         <% }) %>
       </tbody>

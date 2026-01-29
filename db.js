@@ -1,105 +1,134 @@
-'use strict';
+"use strict";
 
-const { Pool } = require('pg');
+const { Pool } = require("pg");
 
-// Railway: DATABASE_URL
-// Local: PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE
-const connectionString = process.env.DATABASE_URL || null;
-
-const pool = new Pool(
-  connectionString
-    ? {
-        connectionString,
-        // Railway Postgres обычно работает через SSL
-        ssl: { rejectUnauthorized: false },
-      }
-    : {
-        host: process.env.PGHOST || '127.0.0.1',
-        port: Number(process.env.PGPORT || 5432),
-        user: process.env.PGUSER || 'postgres',
-        password: process.env.PGPASSWORD || '',
-        database: process.env.PGDATABASE || 'postgres',
-      }
-);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Railway обычно требует SSL; self-signed/managed — ставим rejectUnauthorized=false
+  ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false },
+});
 
 async function dbQuery(text, params) {
   return pool.query(text, params);
 }
 
 async function ensureSchema() {
-  // Таблицы (минимально необходимое)
+  // Таблицы + "мягкие" миграции (добавляем недостающие колонки)
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS public.users (
-      id          text PRIMARY KEY,
-      fio         text,
-      phone       text,
-      pin         text,
-      role        text DEFAULT 'user',
-      zones       jsonb DEFAULT '[]'::jsonb,
-      is_active   boolean DEFAULT true,
-      created_at  timestamptz DEFAULT NOW()
+      id TEXT PRIMARY KEY,
+      fio TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      pin TEXT,
+      role TEXT NOT NULL DEFAULT 'user',
+      zones TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS public.zones (
-      id    text PRIMARY KEY,
-      name  text,
-      sort  integer DEFAULT 0
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort INTEGER NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE
     );
   `);
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS public.devices (
-      id        text PRIMARY KEY,
-      name      text,
-      zone_id   text,
-      method    text,
-      url       text,
-      sort      integer DEFAULT 0,
-      is_active boolean DEFAULT true
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS public.audit (
-      id          bigserial PRIMARY KEY,
-      ts          timestamptz DEFAULT NOW(),
-      actor_id    text,
-      actor_phone text,
-      actor_fio   text,
-      action      text,
-      target_type text,
-      target_id   text,
-      details     text,
-      ip          text,
-      ua          text
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      zone_id TEXT NOT NULL REFERENCES public.zones(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT 'GET',
+      sort INTEGER NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE
     );
   `);
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS public.transit_events (
-      id       bigserial PRIMARY KEY,
-      datetime timestamptz DEFAULT NOW(),
-      point    text,
-      event    text,
-      source   text,
-      result   text,
-      session  text
+      id BIGSERIAL PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      point TEXT NOT NULL DEFAULT '',
+      event TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT '',
+      result TEXT NOT NULL DEFAULT '',
+      session TEXT NOT NULL DEFAULT ''
     );
   `);
 
-  // На всякий случай: если таблицы были старые без sort
-  await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
-  await dbQuery(`ALTER TABLE IF EXISTS public.zones   ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
-  await dbQuery(`ALTER TABLE IF EXISTS public.devices ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.audit (
+      id BIGSERIAL PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      actor_id TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL DEFAULT '',
+      object TEXT NOT NULL DEFAULT '',
+      details TEXT NOT NULL DEFAULT ''
+    );
+  `);
 
-  // Миграции для старых схем (чтобы приложение не падало на "column ... does not exist")
-  await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;`);
-  await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT NOW();`);
+  // --- мягкие миграции для старых схем ---
+  // users: status -> is_active, zones jsonb -> text[] и т.д. (пишем безопасно)
 
-  await dbQuery(`ALTER TABLE IF EXISTS public.zones   ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;`);
-  await dbQuery(`ALTER TABLE IF EXISTS public.devices ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;`);
+  // добавляем колонки если их нет
+  await dbQuery(`DO $$
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='is_active') THEN
+      ALTER TABLE public.users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='created_at') THEN
+      ALTER TABLE public.users ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='zones' AND column_name='sort') THEN
+      ALTER TABLE public.zones ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='sort') THEN
+      ALTER TABLE public.devices ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='transit_events' AND column_name='created_at') THEN
+      ALTER TABLE public.transit_events ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    END IF;
+  END $$;`);
+
+  // если в users есть колонка status (text) — пытаемся конвертнуть в is_active
+  await dbQuery(`DO $$
+  BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='status') THEN
+      UPDATE public.users
+      SET is_active = CASE WHEN LOWER(COALESCE(status,'')) IN ('active','1','true','yes') THEN TRUE ELSE FALSE END
+      WHERE is_active IS NULL;
+    END IF;
+  END $$;`);
+
+  // если zones в users было jsonb, а мы хотим text[] — попробуем привести
+  // (не падаем, если тип уже text[])
+  await dbQuery(`DO $$
+  DECLARE t TEXT;
+  BEGIN
+    SELECT data_type INTO t
+    FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='users' AND column_name='zones';
+
+    IF t = 'jsonb' THEN
+      ALTER TABLE public.users
+        ALTER COLUMN zones TYPE TEXT[]
+        USING (
+          SELECT COALESCE(array_agg(value::text), ARRAY[]::text[])
+          FROM jsonb_array_elements_text(zones)
+        );
+    END IF;
+  EXCEPTION WHEN others THEN
+    -- игнорируем, если преобразование невозможно
+    NULL;
+  END $$;`);
 }
 
-module.exports = { pool, dbQuery, ensureSchema };
+module.exports = {
+  pool,
+  dbQuery,
+  ensureSchema,
+};
