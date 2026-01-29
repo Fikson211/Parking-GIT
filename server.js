@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { dbQuery, ensureSchema } = require('./db');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // --- базовые настройки ---
 const PORT = Number(process.env.PORT || 8080);
@@ -27,7 +28,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: 'auto',
       maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   })
