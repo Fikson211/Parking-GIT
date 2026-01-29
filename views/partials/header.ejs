@@ -37,7 +37,7 @@
     }
   </style>
 </head>
-<body class="bg <%= bodyClass || '' %>">
+<body class="bg <%= (typeof bodyClass !== 'undefined' ? bodyClass : '') %>">
   <div class="container">
     <div class="topbar">
       <div class="brand">
