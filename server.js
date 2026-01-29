@@ -540,19 +540,23 @@ async function ensureDefaultAdmin() {
   const adminPin = digitsOnly(process.env.ADMIN_PIN || '1234');
 
   const exists = await dbQuery(
-    `SELECT id FROM public.users WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1 LIMIT 1`,
+    `SELECT id
+       FROM public.users
+      WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1
+      LIMIT 1`,
     [adminPhone]
   );
 
   if (exists.rows.length) return;
 
-  const id = 'admin';
+  const id = 'u_admin'; // лучше так, как у тебя уже было
   const fio = process.env.ADMIN_FIO || 'Администратор';
-  // если зон ещё нет — оставляем пусто, можно назначить в админке
+
+  // zones = text[] (пустой массив), status = 'active'
   await dbQuery(
-    `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
-     VALUES ($1,$2,$3,$4,'admin','[]'::jsonb,true)
-     ON CONFLICT (id) DO NOTHING`,
+    `INSERT INTO public.users (id, fio, phone, role, status, pin, zones)
+     VALUES ($1, $2, $3, 'admin', 'active', $4, ARRAY[]::text[])
+     ON CONFLICT (phone) DO NOTHING`,
     [id, fio, adminPhone, adminPin]
   );
 
