@@ -93,6 +93,13 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
   await dbQuery(`ALTER TABLE IF EXISTS public.zones   ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
   await dbQuery(`ALTER TABLE IF EXISTS public.devices ADD COLUMN IF NOT EXISTS sort integer DEFAULT 0;`);
+
+  // Миграции для старых схем (чтобы приложение не падало на "column ... does not exist")
+  await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;`);
+  await dbQuery(`ALTER TABLE IF EXISTS public.users   ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT NOW();`);
+
+  await dbQuery(`ALTER TABLE IF EXISTS public.zones   ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;`);
+  await dbQuery(`ALTER TABLE IF EXISTS public.devices ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;`);
 }
 
 module.exports = { pool, dbQuery, ensureSchema };

@@ -10,7 +10,6 @@ const crypto = require('crypto');
 const { dbQuery, ensureSchema } = require('./db');
 
 const app = express();
-app.set('trust proxy', 1);
 
 // --- базовые настройки ---
 const PORT = Number(process.env.PORT || 8080);
@@ -28,7 +27,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: 'auto',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   })
@@ -57,6 +56,27 @@ function toMapById(rows) {
     out[r.id] = r;
   });
   return out;
+}
+
+// Кэш наличия колонок, чтобы приложение не падало, если БД «старого» формата.
+const _colCache = new Map();
+async function hasColumn(table, column) {
+  const key = `${table}.${column}`;
+  if (_colCache.has(key)) return _colCache.get(key);
+  try {
+    const rows = await dbQuery(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name=$1 AND column_name=$2
+       LIMIT 1`,
+      [table, column]
+    );
+    const ok = (rows || []).length > 0;
+    _colCache.set(key, ok);
+    return ok;
+  } catch {
+    _colCache.set(key, false);
+    return false;
+  }
 }
 
 async function appendTransitEvent({ point, event, source, result, session: sessionId }) {
@@ -95,11 +115,46 @@ async function appendAudit(req, action, targetType, targetId, details) {
 }
 
 async function loadAll() {
-  // Важно: никаких ORDER BY sort если колонки нет — ensureSchema её добавит.
+  // Подстраиваемся под старую схему БД: если каких-то колонок нет, работаем без них.
+  // Это важно, чтобы приложение не падало, пока ты наводишь порядок в Postgres.
+  const col = async (table, column) => {
+    const r = await dbQuery(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name=$2 LIMIT 1`,
+      [table, column]
+    );
+    return r.rowCount > 0;
+  };
+
+  const [u_is_active, u_created_at, z_sort, z_is_active, d_sort, d_is_active] = await Promise.all([
+    col('users', 'is_active'),
+    col('users', 'created_at'),
+    col('zones', 'sort'),
+    col('zones', 'is_active'),
+    col('devices', 'sort'),
+    col('devices', 'is_active'),
+  ]);
+
+  const usersSql = `SELECT id,fio,phone,pin,role,zones,
+      ${u_is_active ? 'is_active' : 'true AS is_active'}
+    FROM public.users
+    ORDER BY ${u_created_at ? 'created_at' : 'id'} ASC`;
+
+  const zonesSql = `SELECT id,name,
+      ${z_sort ? 'sort' : '0 AS sort'},
+      ${z_is_active ? 'is_active' : 'true AS is_active'}
+    FROM public.zones
+    ORDER BY ${z_sort ? 'sort' : 'name'} ASC, name ASC`;
+
+  const devicesSql = `SELECT id,name,zone_id,method,url,
+      ${d_sort ? 'sort' : '0 AS sort'},
+      ${d_is_active ? 'is_active' : 'true AS is_active'}
+    FROM public.devices
+    ORDER BY ${d_sort ? 'sort' : 'name'} ASC, name ASC`;
+
   const [users, zones, devices] = await Promise.all([
-    dbQuery(`SELECT id,fio,phone,pin,role,zones,is_active FROM public.users ORDER BY created_at ASC`),
-    dbQuery(`SELECT id,name,sort FROM public.zones ORDER BY sort ASC, name ASC`),
-    dbQuery(`SELECT id,name,zone_id,method,url,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
+    dbQuery(usersSql),
+    dbQuery(zonesSql),
+    dbQuery(devicesSql),
   ]);
 
   return {
@@ -112,7 +167,7 @@ async function loadAll() {
       zones: u.zones || [],
       is_active: u.is_active !== false,
     }))),
-    zones: toMapById(zones.rows.map((z) => ({ id: z.id, name: z.name, sort: z.sort ?? 0 }))),
+    zones: toMapById(zones.rows.map((z) => ({ id: z.id, name: z.name, sort: z.sort ?? 0, is_active: z.is_active !== false }))),
     devices: toMapById(devices.rows.map((d) => ({
       id: d.id,
       name: d.name,
@@ -160,8 +215,9 @@ app.post('/login', async (req, res) => {
   const pinIn = digitsOnly(req.body.pin);
 
   try {
+    const usersHasIsActive = await hasColumn('users', 'is_active');
     const r = await dbQuery(
-      `SELECT id,fio,phone,pin,role,zones,is_active
+      `SELECT id,fio,phone,pin,role,zones,${usersHasIsActive ? 'is_active' : 'true as is_active'}
        FROM public.users
        WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1
        LIMIT 1`,
