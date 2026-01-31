@@ -1,24 +1,24 @@
-<%- include('partials/header', { title: 'Вход', user: null }) %>
-
-<div class="card" style="max-width:420px;margin:48px auto;">
-  <h2 style="margin-top:0">Вход</h2>
-  <p class="muted" style="margin-top:-4px">PIN по умолчанию — последние 4 цифры телефона (если админ не задал PIN).</p>
-
-  <% if (typeof error !== "undefined" && error) { %>
-    <div class="badge danger" style="display:block;padding:10px 12px;margin:10px 0 16px 0;">
-      <%= error %>
+<%- include('partials/header', { title, bodyClass, user: null }) %>
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6 col-lg-5">
+    <div class="card card-glass p-3 p-md-4">
+      <h1 class="h4 mb-1">Вход</h1>
+      <p class="text-muted mb-3">Введите номер телефона и PIN.</p>
+      <% if (error) { %>
+        <div class="alert alert-danger py-2"><%= error %></div>
+      <% } %>
+      <form method="post" action="/login" autocomplete="on">
+        <div class="mb-3">
+          <label class="form-label">Телефон</label>
+          <input name="phone" type="tel" class="form-control form-control-lg" placeholder="79991112233" required />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">PIN</label>
+          <input name="pin" type="password" class="form-control form-control-lg" placeholder="••••" required />
+        </div>
+        <button class="btn btn-gold w-100 btn-lg" type="submit">Войти</button>
+      </form>
     </div>
-  <% } %>
-
-  <form method="POST" action="/login" autocomplete="off">
-    <label class="muted">Телефон</label>
-    <input name="phone" inputmode="numeric" placeholder="79991112233" style="width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;margin:8px 0 16px;" required />
-
-    <label class="muted">PIN</label>
-    <input name="pin" inputmode="numeric" placeholder="1234" style="width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;margin:8px 0 18px;" required />
-
-    <button class="btn" type="submit" style="width:100%">Войти</button>
-  </form>
+  </div>
 </div>
-
 <%- include('partials/footer') %>

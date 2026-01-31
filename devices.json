@@ -1,0 +1,268 @@
+{ 
+ "lift1": {
+    "name": "Лифт 1",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.128/protect/rb0s.cgi"
+  },
+  "lift2": {
+    "name": "Лифт 2",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.129/protect/rb0s.cgi"
+  },
+  "door1": {
+    "name": "Дверь 1",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.132/protect/rb0s.cgi"
+  },
+  "door2": {
+    "name": "Дверь 2",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.134/protect/rb0s.cgi"
+  },
+  "door3": {
+    "name": "Дверь 3",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.130/protect/rb0s.cgi"
+  },
+  "door4": {
+    "name": "Дверь 4",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.133/protect/rb0s.cgi"
+  },
+  "door5": {
+    "name": "Дверь 5",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.135/protect/rb0s.cgi"
+  },
+  "door6": {
+    "name": "Дверь 6",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.136/protect/rb0s.cgi"
+  },
+  "door7": {
+    "name": "Дверь 7",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.176/protect/rb0s.cgi"
+  },
+  "door8": {
+    "name": "Дверь 8",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.138/protect/rb0s.cgi"
+  },
+  "door9": {
+    "name": "Дверь 9",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.131/protect/rb0s.cgi"
+  },
+  "door10": {
+    "name": "Дверь 10",
+    "zone": "pedestrian",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.137/protect/rb0s.cgi"
+  },
+"sh1": {
+    "name": "Ш1",
+    "zone": "buffer",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.143:5000/open_gates?pin_name=2"
+  },
+ "sh2": {
+    "name": "Ш2",
+    "zone": "buffer",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.143:5000/open_gates?pin_name=1"
+  },
+ "sh3": {
+    "name": "Ш3/4",
+    "zone": "buffer",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.141:5000/open_gates?pin_name=2"
+  },
+  "euro_in1": {
+    "name": "Въезд 2эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.185/protect/rb0s.cgi"
+  }, 
+  "euro_out2": {
+    "name": "Выезд 2эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.188/protect/rb0s.cgi"
+  }, 
+  "euro_in3": {
+    "name": "Въезд 3эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.186/protect/rb0s.cgi"
+  },
+  "euro_out4": {
+    "name": "Выезд 3эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.189/protect/rb0s.cgi"
+  },
+  "euro_in5": {
+    "name": "Въезд 4эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.187/protect/rb0s.cgi"
+  },
+  "euro_out6": {
+    "name": "Выезд 4эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.190/protect/rb0s.cgi"
+  },
+  "euro_in7": {
+    "name":"Въезд 6эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.193/protect/rb0s.cgi"
+  },
+  "euro_out8": {
+    "name": "Выезд 6эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.194/protect/rb0s.cgi"
+  },
+  "euro_in9": {
+    "name":"Въезд 7эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.195/protect/rb0s.cgi"
+  },
+  "euro_out10": {
+    "name": "Выезд 7эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.196/protect/rb0s.cgi"
+  },
+  "euro_in11": {
+    "name":"Въезд 8эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.197/protect/rb0s.cgi"
+  },
+  "euro_out12": {
+    "name": "Выезд 8эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.198/protect/rb0s.cgi"
+  },
+  "euro_in13": {
+    "name":"Въезд 9эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+    "url": "http://admin:admin@192.168.1.199/protect/rb0s.cgi"
+  },
+  "euro_out14": {
+    "name": "Выезд 9эт",
+    "zone": "europlan",
+    "type": "rodos",
+    "method": "GET",
+     "url": "http://admin:admin@192.168.1.200/protect/rb0s.cgi"
+ },
+      "v1": {
+    "name": "Въезд В1",
+    "zone": "overground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.142:5000/open_gates?pin_name=1"
+  },
+      "v2": {
+    "name": "Въезд В2",
+    "zone": "overground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.142:5000/open_gates?pin_name=2"
+  },
+    "v3": {
+    "name": "Выезд В3/4",
+    "zone": "overground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.140:5000/open_gates?pin_name=2"
+  },
+    "v4": {
+    "name": "Выезд Ш8",
+    "zone": "overground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.144:5000/open_gates?pin_name=1"
+  },
+    "v5": {
+    "name": "Выезд Ш9",
+    "zone": "overground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.144:5000/open_gates?pin_name=2"
+  },
+      "p1": {
+    "name": "Въезд П1",
+    "zone": "underground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.141:5000/open_gates?pin_name=1"
+  },
+      "p2": {
+    "name": "Въезд П2/3",
+    "zone": "underground",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.140:5000/open_gates?pin_name=1"
+  },
+     "sh6": {
+    "name": "Ш 6",
+    "zone": "transit",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.145:5000/open_gates?pin_name=2"
+  },
+     "sh7": {
+    "name": "Ш 7",
+    "zone": "transit",
+    "type": "raspberry",
+    "method": "GET",
+    "url": "http://192.168.1.145:5000/open_gates?pin_name=1"
+  }
+ }
