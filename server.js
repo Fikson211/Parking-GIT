@@ -51,6 +51,13 @@ app.use(
   })
 );
 
+// Ensure EJS locals are always defined (prevents ReferenceError in templates)
+app.use((req, res, next) => {
+  res.locals.user = (req.session && req.session.user) ? req.session.user : null;
+  if (typeof res.locals.bodyClass === 'undefined') res.locals.bodyClass = '';
+  next();
+});
+
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "ejs");
 app.engine("ejs", require("ejs").__express);
