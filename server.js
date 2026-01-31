@@ -133,6 +133,10 @@ app.get("/login", (req, res) => {
   return res.render("login", { error: null, brandTitle: "Parking GIT" });
 });
 
+// --- RU aliases (старые ссылки в интерфейсе) ---
+app.get("/войти в систему", (req, res) => res.redirect("/login"));
+app.post("/войти в систему", (req, res) => res.redirect(307, "/login"));
+
 app.post("/login", asyncWrap(async (req, res) => {
   const phone = normalizePhone(req.body.phone);
   const pinInput = digitsOnly(req.body.pin);
@@ -202,6 +206,22 @@ app.post("/logout", (req, res) => {
     res.redirect("/login");
   });
 });
+
+// Удобный GET logout (и RU-алиас), если в меню был прямой линк
+app.get("/logout", (req, res) => {
+  const uid = req.session?.user?.id;
+  req.session.destroy(() => {
+    if (uid) audit(uid, "logout", "user", uid, null);
+    res.redirect("/login");
+  });
+});
+app.get("/выход из системы", (req, res) => res.redirect("/logout"));
+
+// Админ-страницы RU-алиасы
+app.get("/администратор/пользователи", (req, res) => res.redirect("/admin/users"));
+app.get("/администратор/устройства", (req, res) => res.redirect("/admin/devices"));
+app.get("/администратор/зоны", (req, res) => res.redirect("/admin/zones"));
+app.get("/администратор/аудит", (req, res) => res.redirect("/admin/audit"));
 
 // --- dashboard ---
 app.get("/", requireAuth, asyncWrap(async (req, res) => {
@@ -330,7 +350,7 @@ app.get("/logs", requireAuth, asyncWrap(async (req, res) => {
   const pointsRes = await dbQuery(`SELECT DISTINCT point FROM public.transit_events ORDER BY point`, []);
   const eventsRes = await dbQuery(`SELECT DISTINCT event FROM public.transit_events ORDER BY event`, []);
 
-  res.render("logs", { user: me, bodyClass: "logs", brandTitle: "Parking GIT",
+  res.render("logs", { title: "Журнал транзита", user: me, bodyClass: "logs", brandTitle: "Parking GIT",
     logs: logsRes.rows,
     points: pointsRes.rows.map((r) => r.point),
     events: eventsRes.rows.map((r) => r.event),

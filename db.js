@@ -123,6 +123,23 @@ async function ensureSchema() {
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='created_at') THEN
       ALTER TABLE public.audit ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     END IF;
+
+    -- audit.* (для старых схем, когда таблица уже была создана с другим набором колонок)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='actor_id') THEN
+      ALTER TABLE public.audit ADD COLUMN actor_id text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='action') THEN
+      ALTER TABLE public.audit ADD COLUMN action text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='object_type') THEN
+      ALTER TABLE public.audit ADD COLUMN object_type text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='object_id') THEN
+      ALTER TABLE public.audit ADD COLUMN object_id text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='detail') THEN
+      ALTER TABLE public.audit ADD COLUMN detail text;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='transit_events' AND column_name='created_at') THEN
       ALTER TABLE public.transit_events ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     END IF;

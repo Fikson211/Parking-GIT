@@ -1,7 +1,12 @@
-<%- include('partials/header', { title, user, bodyClass }) %>
+<%
+  const pageTitle = (typeof title !== 'undefined' && title) ? title : 'Журнал';
+  const _user = (typeof user !== 'undefined') ? user : null;
+  const _bodyClass = (typeof bodyClass !== 'undefined') ? bodyClass : '';
+%>
+<%- include('partials/header', { title: pageTitle, user: _user, bodyClass: _bodyClass }) %>
 
 <div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h5 m-0"><%= title %></h1>
+  <h1 class="h5 m-0"><%= pageTitle %></h1>
   <div class="text-muted small">показано: <%= logs.length %></div>
 </div>
 
