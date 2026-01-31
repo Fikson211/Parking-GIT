@@ -511,12 +511,25 @@ app.post('/admin/devices/:id/update', adminRequired, async (req, res) => {
 });
 
 app.get('/admin/zones', adminRequired, async (req, res) => {
-  const { zones } = await loadAll();
+  const { zones, devices } = await loadAll();
+
+  // group devices by zone_id for удобного отображения в админке
+  const devicesByZone = {};
+  for (const d of Object.values(devices || {})) {
+    const zid = String(d.zone_id || d.zone || '').trim();
+    if (!zid) continue;
+    (devicesByZone[zid] ||= []).push(d);
+  }
+  for (const zid of Object.keys(devicesByZone)) {
+    devicesByZone[zid].sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), 'ru'));
+  }
+
   res.render('admin_zones', {
     title: 'Админ • Зоны',
     bodyClass: 'admin-page',
     user: req.session.user,
     zones: Object.values(zones),
+    devicesByZone,
   });
 });
 

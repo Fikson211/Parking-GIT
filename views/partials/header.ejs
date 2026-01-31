@@ -62,9 +62,13 @@ input,select,textarea,button{max-width:100%}
 .text-wrap{white-space:normal;word-break:break-word}
 .navbar,.topbar,.nav{flex-wrap:wrap}
 
+  /* chips for device lists */
+  .chips{display:flex;flex-wrap:wrap;gap:6px;max-width:100%;}
+  .chip{display:inline-flex;align-items:center;max-width:100%;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);font-size:12px;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
 </style>
 </head>
-<body class="<%= (typeof bodyClass !== \'undefined\' && bodyClass) ? bodyClass : \'\' %>">
+<body class="<%= (typeof bodyClass !== 'undefined' && bodyClass) ? bodyClass : '' %>">
 <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
   <div class="container">
     <a class="navbar-brand brand-badge" href="/">

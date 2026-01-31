@@ -34,6 +34,7 @@
         <tr>
           <th>ID</th>
           <th>Название</th>
+          <th>Устройства</th>
         </tr>
       </thead>
       <tbody>
@@ -41,6 +42,19 @@
         <tr>
           <td class="text-nowrap"><code><%= z.id %></code></td>
           <td><%= z.name %></td>
+          <% const ds = (devicesByZone && devicesByZone[z.id]) ? devicesByZone[z.id] : []; %>
+          <td>
+            <% if (ds.length) { %>
+              <div class="chips">
+                <% ds.slice(0,8).forEach(d => { %>
+                  <span class="chip"><%= d.name || d.id %></span>
+                <% }) %>
+                <% if (ds.length > 8) { %><span class="chip">+<%= ds.length - 8 %></span><% } %>
+              </div>
+            <% } else { %>
+              <span class="text-muted">—</span>
+            <% } %>
+          </td>
         </tr>
       <% }) %>
       </tbody>
