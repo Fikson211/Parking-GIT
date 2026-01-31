@@ -27,12 +27,15 @@ const PORT = Number(process.env.PORT || 8080);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-railway";
 
 app.disable("x-powered-by");
+// Railway/любой reverse proxy: чтобы корректно работали secure-cookies (сессии) за HTTPS
+app.set("trust proxy", 1);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(
   session({
     secret: SESSION_SECRET,
+    proxy: true,
     resave: false,
     saveUninitialized: false,
     cookie: {
