@@ -1,65 +1,94 @@
-<%- include('partials/header', { title: 'Панель управления', user, bodyClass }) %>
+<%- include('partials/header', { title: 'Панель управления', user: (typeof user !== 'undefined' ? user : null), bodyClass: (typeof bodyClass !== 'undefined' ? bodyClass : 'dashboard') }) %>
+
+<%
+  const safeUser = (typeof user !== 'undefined' && user) ? user : null;
+  const safeZones = (typeof zones !== 'undefined' && Array.isArray(zones)) ? zones : [];
+  const selected = (typeof selectedZone !== 'undefined' && selectedZone) ? String(selectedZone) : '';
+
+  // Показываем либо выбранную зону, либо все
+  const shownZones = selected ? safeZones.filter(z => String(z.id) === selected) : safeZones;
+%>
 
 <div class="d-flex align-items-end justify-content-between mb-3">
   <div>
-    <div class="text-muted small">Пользователь</div>
-    <div class="h5 m-0"><%= user.fio || 'Без имени' %> <span class="badge text-bg-light border"><%= user.role %></span></div>
-    <div class="text-muted small"><%= user.phone %></div>
+    <h2 class="mb-1">Панель управления</h2>
+    <div class="muted">
+      <%= safeUser ? (safeUser.fio || safeUser.id) : 'Гость' %>
+      <% if (safeUser && safeUser.role) { %>
+        · <span class="badge"><%= safeUser.role %></span>
+      <% } %>
+    </div>
   </div>
 </div>
 
-<% if (!byZone.length) { %>
-  <div class="alert alert-warning">У вас нет доступных устройств (проверьте зоны доступа в users.json или в админке).</div>
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="muted">Фильтр по зоне</div>
+      <div class="chips">
+        <a class="chip <%= selected ? '' : 'active' %>" href="/">Все зоны</a>
+        <% for (const z of safeZones) { %>
+          <a class="chip <%= (selected === String(z.id)) ? 'active' : '' %>" href="/?zone=<%= encodeURIComponent(z.id) %>">
+            <%= z.name || z.id %>
+          </a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if (!shownZones.length) { %>
+  <div class="alert alert-warning">
+    Нет доступных устройств. Проверьте зоны доступа у пользователя (users.zones) и наличие устройств в таблице devices.
+  </div>
 <% } %>
 
-<div class="accordion" id="zonesAccordion">
-  <% byZone.forEach((z, idx) => { const cid = 'zone_' + idx; %>
-    <div class="accordion-item shadow-sm rounded-4 overflow-hidden mb-2">
-      <h2 class="accordion-header" id="h_<%= cid %>">
-        <button class="accordion-button <%= idx===0 ? '' : 'collapsed' %>" type="button"
-                data-bs-toggle="collapse" data-bs-target="#c_<%= cid %>"
-                aria-expanded="<%= idx===0 ? 'true' : 'false' %>" aria-controls="c_<%= cid %>">
-          <span class="me-2">📍</span>
-          <span class="fw-semibold"><%= z.zoneName %></span>
-          <span class="ms-auto badge text-bg-light border"><%= z.devices.length %></span>
-        </button>
-      </h2>
-      <div id="c_<%= cid %>" class="accordion-collapse collapse <%= idx===0 ? 'show' : '' %>" data-bs-parent="#zonesAccordion">
-        <div class="accordion-body">
-          <div class="vstack gap-2">
-            <% z.devices.forEach(d => { %>
-              <div class="device-row d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2">
-                <div class="me-sm-3">
-                  <div class="fw-semibold"><%= d.name %></div>
-                  <div class="text-muted small"><%= d.id %></div>
-                </div>
-                <button class="btn btn-primary btn-action" onclick="openDevice('<%= d.id %>', this)">Открыть</button>
-              </div>
-            <% }) %>
+<div class="grid">
+  <% for (const z of shownZones) { %>
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="h6 mb-0"><%= z.name || z.id || 'Без зоны' %></div>
+            <div class="muted" style="margin-top:4px;">
+              Устройств: <%= (z.devices ? z.devices.length : 0) %>
+            </div>
           </div>
+        </div>
+
+        <div class="device-grid" style="margin-top:14px;">
+          <% for (const d of (z.devices || [])) { %>
+            <button
+              class="btn <%= d.is_active === false ? 'btn-secondary' : 'btn-primary' %>"
+              style="width:100%;"
+              <%= d.is_active === false ? 'disabled' : '' %>
+              onclick="openDevice('<%= d.id %>')"
+            >
+              <%= d.name || d.id %>
+            </button>
+          <% } %>
         </div>
       </div>
     </div>
-  <% }) %>
+  <% } %>
 </div>
 
 <script>
-async function openDevice(id, btn){
-  const old = btn.innerText;
-  btn.disabled = true;
-  btn.innerText = '...';
-  try{
-    const r = await fetch('/api/open/' + encodeURIComponent(id), { method:'POST' });
-    const j = await r.json();
-    if(!j.ok) throw new Error(j.error || 'Ошибка');
-    btn.innerText = '✅';
-    setTimeout(()=>btn.innerText=old, 900);
-  }catch(e){
-    alert(e.message);
-    btn.innerText = '⚠️';
-    setTimeout(()=>btn.innerText=old, 1200);
-  }finally{
-    btn.disabled = false;
+async function openDevice(id) {
+  try {
+    const r = await fetch('/api/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert((data && data.error) ? data.error : 'Ошибка');
+      return;
+    }
+    alert('✅ Отправлено');
+  } catch (e) {
+    alert('Ошибка сети');
   }
 }
 </script>

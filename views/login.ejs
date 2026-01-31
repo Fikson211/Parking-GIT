@@ -4,7 +4,7 @@
   <h2 style="margin-top:0">Вход</h2>
   <p class="muted" style="margin-top:-4px">PIN по умолчанию — последние 4 цифры телефона (если админ не задал PIN).</p>
 
-  <% if (error) { %>
+  <% if (typeof error !== "undefined" && error) { %>
     <div class="badge danger" style="display:block;padding:10px 12px;margin:10px 0 16px 0;">
       <%= error %>
     </div>
