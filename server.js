@@ -22,6 +22,10 @@ const { ensureSchema, dbQuery } = require("./db");
 
 const app = express();
 
+// Обертка для async-роутов (Express 4 не ловит rejected promises автоматически)
+const asyncWrap = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
+
 // --- базовые настройки ---
 const PORT = Number(process.env.PORT || 8080);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-railway";
@@ -129,7 +133,7 @@ app.get("/login", (req, res) => {
   return res.render("login", { error: null, brandTitle: "Parking GIT" });
 });
 
-app.post("/login", async (req, res) => {
+app.post("/login", asyncWrap(async (req, res) => {
   const phone = normalizePhone(req.body.phone);
   const pinInput = digitsOnly(req.body.pin);
 
@@ -189,7 +193,7 @@ app.post("/login", async (req, res) => {
 
   await audit(user.id, "login", "user", user.id, null);
   return res.redirect("/");
-});
+}));
 
 app.post("/logout", (req, res) => {
   const uid = req.session?.user?.id;
@@ -200,7 +204,7 @@ app.post("/logout", (req, res) => {
 });
 
 // --- dashboard ---
-app.get("/", requireAuth, async (req, res) => {
+app.get("/", requireAuth, asyncWrap(async (req, res) => {
   const me = req.session.user;
 
   const [zonesRes, devicesRes] = await Promise.all([
@@ -232,10 +236,10 @@ app.get("/", requireAuth, async (req, res) => {
     zones,
     brandTitle: "Parking GIT",
   });
-});
+}));
 
 // --- open device ---
-app.post("/api/open/:deviceId", requireAuth, async (req, res) => {
+app.post("/api/open/:deviceId", requireAuth, asyncWrap(async (req, res) => {
   const me = req.session.user;
   const deviceId = req.params.deviceId;
 
@@ -280,10 +284,10 @@ app.post("/api/open/:deviceId", requireAuth, async (req, res) => {
     await audit(me.id, "open_failed", "device", device.id, String(e.message || "error"));
     return res.status(502).json({ ok: false, error: "Device call failed" });
   }
-});
+}));
 
 // --- logs (transit events) ---
-app.get("/logs", requireAuth, async (req, res) => {
+app.get("/logs", requireAuth, asyncWrap(async (req, res) => {
   const me = req.session.user;
   const qPoint = req.query.point ? String(req.query.point) : "";
   const qEvent = req.query.event ? String(req.query.event) : "";
@@ -338,10 +342,10 @@ app.get("/logs", requireAuth, async (req, res) => {
     events: eventsRes.rows.map((r) => r.event),
     filters: { point: qPoint, event: qEvent, from: qFrom, to: qTo },
   });
-});
+}));
 
 // --- admin: audit log page ---
-app.get("/admin/audit", requireAuth, requireAdmin, async (req, res) => {
+app.get("/admin/audit", requireAuth, requireAdmin, asyncWrap(async (req, res) => {
   const me = req.session.user;
   const aRes = await dbQuery(
     `SELECT created_at, actor_id, action, object_type, object_id, detail
@@ -351,10 +355,10 @@ app.get("/admin/audit", requireAuth, requireAdmin, async (req, res) => {
     []
   );
   res.render("admin_audit", { me, brandTitle: "Parking GIT", rows: aRes.rows });
-});
+}));
 
 // --- admin: users list (simple) ---
-app.get("/admin/users", requireAuth, requireAdmin, async (req, res) => {
+app.get("/admin/users", requireAuth, requireAdmin, asyncWrap(async (req, res) => {
   const me = req.session.user;
   const uRes = await dbQuery(
     `SELECT id,fio,phone,role,pin,zones,is_active,status,created_at
@@ -363,9 +367,9 @@ app.get("/admin/users", requireAuth, requireAdmin, async (req, res) => {
     []
   );
   res.render("admin_users", { me, brandTitle: "Parking GIT", users: uRes.rows, error: null });
-});
+}));
 
-app.post("/admin/users/save", requireAuth, requireAdmin, async (req, res) => {
+app.post("/admin/users/save", requireAuth, requireAdmin, asyncWrap(async (req, res) => {
   const me = req.session.user;
   const id = String(req.body.id || "").trim() || `u_${Date.now()}`;
   const fio = String(req.body.fio || "").trim() || "Без имени";
@@ -397,6 +401,22 @@ app.post("/admin/users/save", requireAuth, requireAdmin, async (req, res) => {
 
   await audit(me.id, "user_save", "user", id, phone);
   return res.redirect("/admin/users");
+}));
+
+// --- errors ---
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  if (res.headersSent) return next(err);
+
+  const wantsJson =
+    req.path.startsWith("/api") ||
+    (req.headers.accept && req.headers.accept.includes("application/json"));
+
+  if (wantsJson) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+
+  res.status(500).send("Внутренняя ошибка сервера");
 });
 
 // --- not found ---
@@ -406,8 +426,12 @@ app.use((req, res) => {
 
 // --- start ---
 (async () => {
-  await ensureSchema();
-  await ensureDefaultAdmin();
+  try {
+    await ensureSchema();
+    await ensureDefaultAdmin();
+  } catch (e) {
+    console.error("DB init error:", e);
+  }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Parking GIT запущен: http://0.0.0.0:${PORT}`);

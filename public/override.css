@@ -1,7 +1,0 @@
-
-table {background: rgba(255,255,255,0.96);color:#1a1a1a;}
-th {background: linear-gradient(135deg,#111,#1c1c1c);color:#f1c84b;font-weight:600;}
-td {color:#111;font-weight:500;}
-.card,.panel,.table-wrapper{background:rgba(255,255,255,0.94)!important;border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,0.25);}
-a{color:#d6b14b;font-weight:600;}
-.badge{font-weight:700;}

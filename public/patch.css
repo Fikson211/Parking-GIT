@@ -1,9 +1,0 @@
-
-@media (max-width:768px){
-table,thead,tbody,th,td,tr{display:block;}
-thead{display:none;}
-tr{background:rgba(255,255,255,0.95);margin-bottom:14px;padding:12px;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,0.25);}
-td{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #ddd;}
-td:last-child{border-bottom:none;}
-td::before{content:attr(data-label);font-weight:600;color:#d6b14b;}
-}

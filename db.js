@@ -86,8 +86,42 @@ async function ensureSchema() {
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='zones' AND column_name='sort') THEN
       ALTER TABLE public.zones ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='zones' AND column_name='is_active') THEN
+      ALTER TABLE public.zones ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='sort') THEN
       ALTER TABLE public.devices ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='is_active') THEN
+      ALTER TABLE public.devices ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+    END IF;
+
+    -- devices.zone_id: миграция со старой колонки "zone"
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='zone_id') THEN
+      ALTER TABLE public.devices ADD COLUMN zone_id TEXT;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='zone') THEN
+      UPDATE public.devices SET zone_id = zone WHERE zone_id IS NULL OR zone_id = '';
+    END IF;
+    -- гарантируем, что есть базовая зона и все устройства привязаны к ней
+    INSERT INTO public.zones(id,name,sort,is_active)
+      VALUES ('default','По умолчанию',0,TRUE)
+      ON CONFLICT (id) DO NOTHING;
+    UPDATE public.devices SET zone_id = 'default' WHERE zone_id IS NULL OR zone_id = '';
+    -- если старая колонка zone существует — синхронизируем назад
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='zone') THEN
+      UPDATE public.devices SET zone = zone_id WHERE zone IS NULL OR zone = '';
+    END IF;
+    -- пытаемся сделать NOT NULL (если не получается — не валим запуск)
+    BEGIN
+      ALTER TABLE public.devices ALTER COLUMN zone_id SET NOT NULL;
+    EXCEPTION WHEN others THEN
+      NULL;
+    END;
+
+    -- audit.created_at (для старых схем)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='audit' AND column_name='created_at') THEN
+      ALTER TABLE public.audit ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='transit_events' AND column_name='created_at') THEN
       ALTER TABLE public.transit_events ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
