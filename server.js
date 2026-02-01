@@ -89,6 +89,15 @@ function digitsOnly(s) {
   return String(s || '').replace(/[^\d]/g, '');
 }
 
+function parseZonesInput(v) {
+  if (!v) return [];
+  const raw = Array.isArray(v) ? v.join(',') : String(v);
+  return raw
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 function genPin(len = 4) {
   const n = crypto.randomInt(0, 10 ** len);
   return String(n).padStart(len, '0');
@@ -152,7 +161,7 @@ async function loadAll() {
       phone: u.phone,
       pin: u.pin,
       role: u.role || 'user',
-      zones: u.zones || [],
+      zones: Array.isArray(u.zones) ? u.zones : [],
       is_active: u.is_active !== false,
     }))),
     zones: toMapById(zones.rows.map((z) => ({ id: z.id, name: z.name, sort: z.sort ?? 0 }))),
@@ -401,7 +410,7 @@ app.post('/login', async (req, res) => {
       fio: u.fio,
       phone: u.phone,
       role: u.role || 'user',
-      zones: u.zones || [],
+      zones: Array.isArray(u.zones) ? u.zones : [],
     };
 
 	    await appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
@@ -565,15 +574,15 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const fio = String(req.body.fio || '').trim();
   const phone = digitsOnly(req.body.phone);
   const role = req.body.role === 'admin' ? 'admin' : 'user';
-  const zones = Array.isArray(req.body.zones) ? req.body.zones : (req.body.zones ? [req.body.zones] : []);
+  const zones = parseZonesInput(req.body.zones);
 
   // PIN: автоген
   const pin = genPin(4);
 
   await dbQuery(
     `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,true)`,
-    [id, fio || null, phone, pin, role, JSON.stringify(zones)]
+     VALUES ($1,$2,$3,$4,$5,$6,true)`,
+    [id, fio || null, phone, pin, role, zones]
   );
 
   await appendAudit(req, 'create', 'user', id, { fio, phone, role, zones, pin_generated: true });
@@ -586,13 +595,13 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
   const phone = digitsOnly(req.body.phone);
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
-  const zones = Array.isArray(req.body.zones) ? req.body.zones : (req.body.zones ? [req.body.zones] : []);
+  const zones = parseZonesInput(req.body.zones);
 
   await dbQuery(
     `UPDATE public.users
-     SET fio=$2, phone=$3, role=$4, zones=$5::jsonb, is_active=$6
+     SET fio=$2, phone=$3, role=$4, zones=$5, is_active=$6
      WHERE id=$1`,
-    [id, fio || null, phone, role, JSON.stringify(zones), isActive]
+    [id, fio || null, phone, role, zones, isActive]
   );
 
   await appendAudit(req, 'update', 'user', id, { fio, phone, role, zones, isActive });
@@ -788,9 +797,9 @@ async function ensureDefaultAdmin() {
   // если зон ещё нет — оставляем пусто, можно назначить в админке
   await dbQuery(
     `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
-     VALUES ($1,$2,$3,$4,'admin','[]'::jsonb,true)
+     VALUES ($1,$2,$3,$4,'admin',$5,true)
      ON CONFLICT (id) DO NOTHING`,
-    [id, fio, adminPhone, adminPin]
+    [id, fio, adminPhone, adminPin, []]
   );
 
   console.log('✅ Создан админ по умолчанию:', adminPhone, 'PIN:', adminPin);

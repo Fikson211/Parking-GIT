@@ -26,7 +26,7 @@ async function ensureSchema() {
       phone TEXT,
       pin TEXT,
       role TEXT DEFAULT 'user',
-      zones JSONB DEFAULT '[]'::jsonb,
+      zones TEXT[] NOT NULL DEFAULT '{}'::text[],
       is_active BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -105,20 +105,54 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS pin TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT;`);
-  await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS zones JSONB;`);
+  await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS zones TEXT[];`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_active BOOLEAN;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;`);
+
+  // migrate zones jsonb -> text[] (if needed)
+  try {
+    const zt = await dbQuery(
+      `SELECT data_type, udt_name
+       FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='users' AND column_name='zones'
+       LIMIT 1`
+    );
+    if (zt.rows.length) {
+      const { data_type, udt_name } = zt.rows[0];
+      const isJsonb = data_type === 'jsonb' || udt_name === 'jsonb';
+      if (isJsonb) {
+        await dbQuery(`
+          ALTER TABLE public.users
+          ALTER COLUMN zones TYPE TEXT[]
+          USING (
+            CASE
+              WHEN zones IS NULL THEN '{}'::text[]
+              WHEN jsonb_typeof(zones)='array' THEN (
+                SELECT COALESCE(array_agg(value), '{}'::text[])
+                FROM jsonb_array_elements_text(zones) AS t(value)
+              )
+              ELSE '{}'::text[]
+            END
+          );
+        `);
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ zones type check/migrate failed:', e?.message || e);
+  }
+
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN role SET DEFAULT 'user';`);
-  await dbQuery(`ALTER TABLE public.users ALTER COLUMN zones SET DEFAULT '[]'::jsonb;`);
+  await dbQuery(`ALTER TABLE public.users ALTER COLUMN zones SET DEFAULT '{}'::text[];`);
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN is_active SET DEFAULT TRUE;`);
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN created_at SET DEFAULT NOW();`);
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN updated_at SET DEFAULT NOW();`);
   await dbQuery(`UPDATE public.users SET role = COALESCE(role,'user') WHERE role IS NULL;`);
-  await dbQuery(`UPDATE public.users SET zones = COALESCE(zones,'[]'::jsonb) WHERE zones IS NULL;`);
+  await dbQuery(`UPDATE public.users SET zones = COALESCE(zones,'{}'::text[]) WHERE zones IS NULL;`);
   await dbQuery(`UPDATE public.users SET is_active = COALESCE(is_active, TRUE) WHERE is_active IS NULL;`);
   await dbQuery(`UPDATE public.users SET created_at = COALESCE(created_at, NOW()) WHERE created_at IS NULL;`);
   await dbQuery(`UPDATE public.users SET updated_at = COALESCE(updated_at, NOW()) WHERE updated_at IS NULL;`);
+
 
   // zones
   await dbQuery(`ALTER TABLE public.zones ADD COLUMN IF NOT EXISTS name TEXT;`);
