@@ -1,24 +1,31 @@
-<%- include('partials/header', { title: 'Вход', bodyClass: 'auth', user: null }) %>
-<div class="row justify-content-center">
-  <div class="col-12 col-md-6 col-lg-5">
-    <div class="card card-glass p-3 p-md-4">
-      <h1 class="h4 mb-1">Вход</h1>
-      <p class="text-muted mb-3">Введите номер телефона и PIN.</p>
-      <% if (error) { %>
-        <div class="alert alert-danger py-2"><%= error %></div>
-      <% } %>
-      <form method="post" action="/login" autocomplete="on">
-        <div class="mb-3">
-          <label class="form-label">Телефон</label>
-          <input name="phone" type="tel" class="form-control form-control-lg" placeholder="79991112233" required />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">PIN</label>
-          <input name="pin" type="password" class="form-control form-control-lg" placeholder="••••" required />
-        </div>
-        <button class="btn btn-gold w-100 btn-lg" type="submit">Войти</button>
-      </form>
+<%- include('partials/header', { title: 'Вход', bodyClass: 'page-login', user: null, path: '/login' }) %>
+
+<div class="card" style="max-width:520px; margin: 12px auto 0;">
+  <h1 style="margin:0 0 4px;">Вход</h1>
+  <div class="muted" style="margin-bottom:12px;">Введите номер телефона и PIN.</div>
+
+  <% if (typeof error !== 'undefined' && error) { %>
+    <div class="alert err"><%= error %></div>
+  <% } %>
+
+  <form method="post" action="/login">
+    <div class="row">
+      <div class="field">
+        <label>Телефон</label>
+        <input name="phone" placeholder="79991112233" autocomplete="tel" required />
+        <div class="hint">Только цифры, без + и пробелов.</div>
+      </div>
+      <div class="field">
+        <label>PIN</label>
+        <input name="pin" type="password" placeholder="1234" autocomplete="current-password" required />
+        <div class="hint">Если PIN не знаете — попросите администратора.</div>
+      </div>
     </div>
-  </div>
+
+    <div style="margin-top:12px;">
+      <button class="btn btn-primary" style="width:100%;">Войти</button>
+    </div>
+  </form>
 </div>
+
 <%- include('partials/footer') %>

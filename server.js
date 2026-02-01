@@ -36,12 +36,23 @@ app.use(
   })
 );
 
+// Static assets: allow both /app.css and /public/app.css
+app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Default locals for all templates (prevents EJS ReferenceError on missing vars)
+app.use((req, res, next) => {
+  res.locals.title = res.locals.title || 'Parking GIT';
+  res.locals.bodyClass = res.locals.bodyClass || '';
+  res.locals.user = req.session?.user || null;
+  next();
+});
+
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.engine('ejs', require('ejs').__express);
 
 // статика (если есть)
-app.use(express.static(path.join(__dirname, 'public')));
 
 // --- утилиты ---
 function digitsOnly(s) {
@@ -101,7 +112,7 @@ async function loadAll() {
   const [users, zones, devices] = await Promise.all([
     dbQuery(`SELECT id,fio,phone,pin,role,zones,is_active FROM public.users ORDER BY created_at ASC`),
     dbQuery(`SELECT id,name,sort FROM public.zones ORDER BY sort ASC, name ASC`),
-    dbQuery(`SELECT id,name,zone_id,method,url,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
+    dbQuery(`SELECT id,name,zone_id,type,method,url,ip,relay,enabled,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
   ]);
 
   return {
@@ -119,8 +130,12 @@ async function loadAll() {
       id: d.id,
       name: d.name,
       zoneId: d.zone_id,
+      type: d.type || 'http',
       method: d.method,
       url: d.url,
+      ip: d.ip || null,
+      relay: (d.relay ?? null),
+      enabled: d.enabled !== false,
       sort: d.sort ?? 0,
       is_active: d.is_active !== false,
     }))),
@@ -149,11 +164,11 @@ async function ensureDefaultZones() {
     params.push(z.id, z.name, z.sort);
   }
   await dbQuery(
-    `INSERT INTO public.zones (id, name, sort_order, is_active, created_at)
+    `INSERT INTO public.zones (id, name, sort, is_active, created_at)
      VALUES ${values.join(',')}
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
-       sort_order = EXCLUDED.sort_order,
+       sort = EXCLUDED.sort,
        is_active = TRUE`,
     params
   );
@@ -171,45 +186,129 @@ function parseDevicesJson(raw) {
   return [];
 }
 
+function testDevices() {
+  return [
+    {
+      id: 'test_gate_in',
+      name: 'Тест: Ворота Въезд',
+      zone_id: 'transit',
+      type: 'http',
+      method: 'POST',
+      url: 'http://example.local/open/in',
+      sort: 10,
+      enabled: true,
+    },
+    {
+      id: 'test_gate_out',
+      name: 'Тест: Ворота Выезд',
+      zone_id: 'transit',
+      type: 'http',
+      method: 'POST',
+      url: 'http://example.local/open/out',
+      sort: 20,
+      enabled: true,
+    },
+    {
+      id: 'test_door_1',
+      name: 'Тест: Дверь 1',
+      zone_id: 'pedestrian',
+      type: 'http',
+      method: 'POST',
+      url: 'http://example.local/open/door1',
+      sort: 30,
+      enabled: true,
+    },
+  ];
+}
+
 async function seedDevicesFromJson() {
+  // Seed only when DB is empty, so we don't overwrite devices created in админке
+  try {
+    const c = await dbQuery('SELECT COUNT(*)::int AS c FROM public.devices');
+    if ((c.rows?.[0]?.c ?? 0) > 0) return;
+  } catch (e) {
+    console.error('seedDevicesFromJson: COUNT(*) failed', e?.message || e);
+    // continue, schema may be just created
+  }
+
+  const testDevices = () => ([
+    {
+      id: 'test_gate_in',
+      name: 'Тестовые ворота (въезд)',
+      zone: 'transit',
+      type: 'http',
+      method: 'POST',
+      url: 'http://example.local/open/in'
+    },
+    {
+      id: 'test_gate_out',
+      name: 'Тестовые ворота (выезд)',
+      zone: 'transit',
+      type: 'http',
+      method: 'POST',
+      url: 'http://example.local/open/out'
+    },
+    {
+      id: 'test_door_1',
+      name: 'Тестовая дверь #1',
+      zone: 'pedestrian',
+      type: 'http',
+      method: 'POST',
+      url: 'http://example.local/open/door1'
+    },
+  ]);
+
   const candidates = [
     path.join(__dirname, 'devices.json'),
     path.join(__dirname, 'data', 'devices.json'),
   ];
   const p = candidates.find(fp => fs.existsSync(fp));
-  if (!p) return;
 
-  let raw;
-  try {
-    raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch (e) {
-    console.error('devices.json: parse error', e?.message || e);
-    return;
+  let list = [];
+
+  if (p) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+      list = parseDevicesJson(raw);
+    } catch (e) {
+      console.error('devices.json: parse error', e?.message || e);
+      list = [];
+    }
   }
 
-  const list = parseDevicesJson(raw);
+  // If file is missing/empty — create demo devices so UI works out of the box
+  if (!list.length) {
+    console.log('ℹ️ devices.json пустой/не найден — создаю тестовые устройства');
+    list = testDevices();
+  }
 
   for (const d of list) {
     const id = String(d.id || '').trim();
     if (!id) continue;
 
     const name = String(d.name || id).trim();
-    const method = String(d.method || 'GET').toUpperCase();
+    const type = String(d.type || 'http').trim() || 'http';
+    const method = String(d.method || 'POST').toUpperCase();
     const url = String(d.url || d.endpoint || d.link || '').trim();
-    const zoneId = String(d.zone_id || d.zone || '').trim() || null;
+    const zoneId = String(d.zone_id || d.zone || '').trim() || 'buffer';
+    const sort = Number.isFinite(Number(d.sort)) ? Number(d.sort) : 0;
+    const enabled = typeof d.enabled === 'boolean' ? d.enabled : true;
 
     // allow url empty (some devices can be placeholders), but keep it consistent
     await dbQuery(
-      `INSERT INTO public.devices (id, name, zone_id, method, url, is_active, created_at)
-       VALUES ($1, $2, $3, $4, $5, TRUE, NOW())
+      `INSERT INTO public.devices (id, name, zone_id, type, method, url, enabled, sort, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, NOW())
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          zone_id = COALESCE(EXCLUDED.zone_id, public.devices.zone_id),
+         type = EXCLUDED.type,
          method = EXCLUDED.method,
          url = EXCLUDED.url,
+         enabled = EXCLUDED.enabled,
+         sort = EXCLUDED.sort,
          is_active = TRUE,
          updated_at = NOW()`,
-      [id, name, zoneId, method, url]
+      [id, name, zoneId, type, method, url, enabled, sort]
     );
   }
 }
@@ -291,7 +390,9 @@ app.get('/', authRequired, async (req, res) => {
   const { zones, devices } = await loadAll();
   const user = req.session.user;
 
-  const allowedZoneIds = Array.isArray(user.zones) ? user.zones : [];
+  const allowedZoneIds = (user.role === 'admin')
+    ? Object.keys(zones)
+    : (Array.isArray(user.zones) ? user.zones : []);
   const devicesArr = Object.values(devices).filter((d) => d.is_active !== false);
 
   // группируем устройства по зонам доступа пользователя
@@ -321,7 +422,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
   const d = devices[deviceId];
   if (!d || d.is_active === false) return res.status(404).json({ ok: false, error: 'Устройство не найдено' });
 
-  const allowed = Array.isArray(user.zones) && user.zones.includes(d.zoneId);
+  const allowed = (user.role === 'admin') || (Array.isArray(user.zones) && user.zones.includes(d.zoneId));
   if (!allowed) return res.status(403).json({ ok: false, error: 'Нет доступа' });
 
   // В этом шаблоне мы просто логируем событие. Реальный вызов реле/контроллера можно добавить позже.
@@ -401,6 +502,16 @@ app.get('/logs.csv', authRequired, async (req, res) => {
   });
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.send(lines.join('\n'));
+});
+
+app.post('/logs/clear', adminRequired, async (req, res) => {
+  try {
+    await dbQuery('TRUNCATE TABLE public.transit_events');
+    await appendAudit(req, 'clear_transit_log', 'transit_events', '*', {});
+  } catch (e) {
+    console.error('clear_transit_log error', e);
+  }
+  return res.redirect('/logs');
 });
 
 // --- admin: users/devices/zones/audit ---
@@ -563,11 +674,15 @@ app.get('/admin/audit', adminRequired, async (req, res) => {
     targetType: e.target_type,
     targetId: e.target_id,
     details: (() => {
-      try {
-        return e.details ? JSON.parse(e.details) : null;
-      } catch {
-        return e.details;
+      if (!e.details) return null;
+      if (typeof e.details === "string") {
+        try {
+          return JSON.parse(e.details);
+        } catch {
+          return e.details;
+        }
       }
+      return e.details;
     })(),
     ip: e.ip,
     ua: e.ua,
@@ -608,7 +723,14 @@ async function ensureDefaultAdmin() {
 (async () => {
   try {
     await ensureSchema();
+    // 1) создаём стандартные зоны
+    await ensureDefaultZones();
+    // 2) загружаем устройства из devices.json или создаём тестовые
+    await seedDevicesFromJson();
+    // 3) создаём админа по умолчанию
     await ensureDefaultAdmin();
+    // 4) прогреваем кэш
+    await loadAll();
   } catch (e) {
     console.error('DB init error:', e);
   }

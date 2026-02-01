@@ -1,89 +1,147 @@
+<%
+  const _title = (typeof title !== 'undefined' && title) ? title : 'Parking GIT';
+  const _bodyClass = (typeof bodyClass !== 'undefined' && bodyClass) ? bodyClass : '';
+  const _user = (typeof user !== 'undefined') ? user : null;
+  const _path = (typeof path !== 'undefined') ? path : '';
+%>
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title><%= title || 'Parking GIT' %></title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title><%= _title %></title>
   <style>
     :root{
-      --bg1:#0b1220;
-      --bg2:#0a0f1a;
-      --card:#0f172a;
-      --card2:#0c1426;
-      --text:#e9eefc;
-      --muted:#a9b6d3;
-      --line:rgba(255,255,255,.08);
-      --gold:#d7b56d;
+      --bg1:#0b1020;
+      --bg2:#0a0f1d;
+      --card: rgba(255,255,255,.08);
+      --card2: rgba(255,255,255,.06);
+      --border: rgba(255,255,255,.14);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.66);
+      --accent: #9cc9ff;
     }
-    html,body{height:100%;}
-    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial; background: radial-gradient(1200px 600px at 20% -10%, rgba(215,181,109,.18), transparent 55%), radial-gradient(900px 500px at 90% 0%, rgba(99,102,241,.18), transparent 60%), linear-gradient(180deg, var(--bg1), var(--bg2)); color:var(--text);}
-    .navbar{backdrop-filter: blur(10px); background: rgba(9, 14, 25, .7) !important; border-bottom:1px solid var(--line)}
-    .brand-badge{display:inline-flex; align-items:center; gap:.6rem; font-weight:700; letter-spacing:.3px}
-    .brand-logo{width:28px;height:28px;border-radius:9px; object-fit:cover; box-shadow: 0 6px 20px rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.12)}
-    .glass{background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); border:1px solid var(--line); box-shadow: 0 12px 40px rgba(0,0,0,.35);}
-    .card{border:1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));}
-    .card .text-muted{color: var(--muted) !important;}
-    .btn-gold{background: linear-gradient(180deg, rgba(215,181,109,1), rgba(184,146,78,1)); border:0; color:#10131c; font-weight:700;}
-    .btn-gold:hover{filter:brightness(1.05)}
-    .btn-outline-light{border-color: rgba(255,255,255,.18)}
-    .badge-soft{background: rgba(215,181,109,.15); color: var(--gold); border:1px solid rgba(215,181,109,.25)}
-    .table{--bs-table-bg:transparent; --bs-table-color:var(--text); --bs-table-border-color: var(--line)}
-    .table thead th{color: var(--muted); font-weight:600}
-    .table td,.table th{vertical-align:middle}
-    .form-control, .form-select{background: rgba(255,255,255,.06); border:1px solid var(--line); color:var(--text)}
-    .form-control:focus, .form-select:focus{border-color: rgba(215,181,109,.45); box-shadow: 0 0 0 .25rem rgba(215,181,109,.15)}
-    .form-control::placeholder{color: rgba(233,238,252,.45)}
-    .small{color: var(--muted)}
-    .zone-btn{border-radius: 16px; padding: 14px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%}
-    .zone-btn .left{display:flex; flex-direction:column; gap:2px; text-align:left}
-    .zone-btn .title{font-weight:700; font-size:14px}
-    .zone-btn .sub{font-size:12px; color: var(--muted)}
-    .zone-btn .icon{width:36px;height:36px;border-radius:14px;background: rgba(215,181,109,.12); border:1px solid rgba(215,181,109,.22); display:flex; align-items:center; justify-content:center; color: var(--gold)}
-    .container{max-width: 1080px}
-    @media (max-width: 576px){
-      .container{padding-left:14px; padding-right:14px}
-      .table-responsive{border:1px solid var(--line); border-radius: 16px; overflow:hidden}
-      .zone-btn{padding: 12px 12px}
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 15% 10%, rgba(120,110,255,.25), transparent 60%),
+        radial-gradient(900px 500px at 80% 0%, rgba(0,220,255,.20), transparent 60%),
+        linear-gradient(180deg, var(--bg1), var(--bg2));
     }
-  
-
-
-/* --- safety: prevent overflow outside cards/viewport --- */
-*{box-sizing:border-box}
-html,body{max-width:100%;overflow-x:hidden}
-img,svg,video,canvas{max-width:100%;height:auto}
-input,select,textarea,button{max-width:100%}
-.card{overflow:hidden}
-.table-responsive{overflow-x:auto}
-.text-wrap{white-space:normal;word-break:break-word}
-.navbar,.topbar,.nav{flex-wrap:wrap}
-
-  /* chips for device lists */
-  .chips{display:flex;flex-wrap:wrap;gap:6px;max-width:100%;}
-  .chip{display:inline-flex;align-items:center;max-width:100%;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);font-size:12px;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-</style>
+    a{ color:inherit; text-decoration:none; }
+    .container{ max-width:1240px; margin:0 auto; padding:16px 16px 28px; }
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:14px 16px; border-radius:16px;
+      background: var(--card); border:1px solid var(--border);
+      backdrop-filter: blur(10px); overflow:hidden;
+    }
+    .brand{ display:flex; align-items:center; gap:10px; min-width:0; font-weight:700; white-space:nowrap; }
+    .brand img{ width:34px; height:34px; border-radius:10px; object-fit:cover; border:1px solid rgba(255,255,255,.16); flex:0 0 auto; }
+    .top-right{ display:flex; align-items:center; gap:10px; min-width:0; justify-content:flex-end; flex-wrap:wrap; }
+    .muted{ color: var(--muted); font-size:13px; }
+    .nav{
+      margin-top:10px; display:flex; gap:8px; padding:10px 12px;
+      border-radius:16px; background: var(--card2);
+      border:1px solid var(--border); backdrop-filter: blur(10px);
+      overflow-x:auto; -webkit-overflow-scrolling:touch;
+    }
+    .tab{
+      flex:0 0 auto; display:inline-flex; align-items:center;
+      padding:10px 12px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06);
+      font-size:14px; white-space:nowrap;
+    }
+    .tab.active{ border-color: rgba(156,201,255,.55); box-shadow: 0 0 0 2px rgba(156,201,255,.14) inset; }
+    .card{
+      margin-top:12px; border-radius:18px;
+      background: var(--card); border:1px solid var(--border);
+      padding:14px; overflow:hidden; backdrop-filter: blur(10px);
+    }
+    .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    .field{ min-width:180px; flex:1 1 220px; }
+    label{ display:block; font-size:12px; color: var(--muted); margin-bottom:6px; }
+    input, select, textarea{
+      width:100%; padding:10px 12px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.22);
+      color: var(--text); outline:none;
+    }
+    input::placeholder{ color: rgba(255,255,255,.35); }
+    textarea{ min-height:84px; resize:vertical; }
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:10px 12px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.10);
+      cursor:pointer; white-space:nowrap;
+    }
+    .btn:hover{ background: rgba(255,255,255,.14); }
+    .btn-primary{ background: rgba(156,201,255,.18); border-color: rgba(156,201,255,.40); }
+    .btn-danger{ background: rgba(255,107,107,.18); border-color: rgba(255,107,107,.42); }
+    .btn-ghost{ background: transparent; border-color: rgba(255,255,255,.18); }
+    .badge{
+      display:inline-flex; align-items:center;
+      padding:4px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06);
+      font-size:12px; white-space:nowrap;
+    }
+    .table-wrap{
+      width:100%; overflow-x:auto;
+      border-radius:14px; border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+    }
+    table{ width:100%; border-collapse:collapse; min-width:560px; }
+    th, td{
+      padding:10px 12px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      vertical-align:top; font-size:13px; word-break:break-word;
+    }
+    th{ text-align:left; color: rgba(255,255,255,.75); font-weight:700; }
+    tr:last-child td{ border-bottom:none; }
+    .chips{ display:flex; flex-wrap:wrap; gap:6px; }
+    .chip{
+      display:inline-flex; align-items:center;
+      padding:5px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06);
+      font-size:12px; white-space:nowrap;
+    }
+    .alert{
+      padding:10px 12px; border-radius:14px;
+      border:1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.22);
+      margin-top:10px; color: rgba(255,255,255,.85);
+    }
+    .alert.warn{ border-color: rgba(255,210,90,.45); }
+    .alert.err{ border-color: rgba(255,107,107,.45); }
+    @media (max-width:640px){ table{ min-width:720px; } }
+  </style>
 </head>
-<body class="<%= (typeof bodyClass !== 'undefined' && bodyClass) ? bodyClass : '' %>">
-<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+<body class="bg <%= _bodyClass %>">
   <div class="container">
-    <a class="navbar-brand brand-badge" href="/">
-      <img class="brand-logo" src="/brand.jpg" alt="logo" onerror="this.style.display='none'" />
-      <span>Parking GIT</span>
-      <span class="badge badge-soft ms-2">Premium</span>
-    </a>
-    <div class="ms-auto d-flex align-items-center gap-2">
-      <% if (user) { %>
-        <div class="small d-none d-sm-block"><%= user.fio || user.phone %></div>
-        <form method="post" action="/logout" class="m-0">
-          <button class="btn btn-outline-light btn-sm" type="submit">Выйти</button>
-        </form>
-      <% } %>
+    <div class="topbar">
+      <div class="brand">
+        <img src="/public/brand.jpg" alt="logo" />
+        <span>Parking GIT</span>
+      </div>
+      <div class="top-right">
+        <% if (_user) { %>
+          <span class="muted"><%= _user.fio || _user.phone || _user.id %></span>
+          <a class="btn btn-ghost" href="/logout">Выйти</a>
+        <% } %>
+      </div>
     </div>
-  </div>
-</nav>
-<main class="container py-4">
+
+    <% if (_user) { %>
+      <nav class="nav" aria-label="Навигация">
+        <a class="tab <%= _path === '/' ? 'active' : '' %>" href="/">Дашборд</a>
+        <a class="tab <%= _path.startsWith('/logs') ? 'active' : '' %>" href="/logs">Журнал транзита</a>
+        <% if ((_user.role || '') === 'admin') { %>
+          <a class="tab <%= _path.startsWith('/admin/users') ? 'active' : '' %>" href="/admin/users">Пользователи</a>
+          <a class="tab <%= _path.startsWith('/admin/devices') ? 'active' : '' %>" href="/admin/devices">Устройства</a>
+          <a class="tab <%= _path.startsWith('/admin/zones') ? 'active' : '' %>" href="/admin/zones">Зоны</a>
+          <a class="tab <%= _path.startsWith('/admin/audit') ? 'active' : '' %>" href="/admin/audit">Аудит</a>
+        <% } %>
+      </nav>
+    <% } %>

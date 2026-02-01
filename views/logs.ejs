@@ -1,5 +1,5 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
-
+<% const pageTitle = (typeof title !== "undefined" && title) ? title : "Журнал транзита"; %>
+<%- include('partials/header', { title: pageTitle, bodyClass, user }) %>
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
     <h1 class="h4 mb-0">Журнал транзита</h1>
