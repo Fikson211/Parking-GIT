@@ -6,6 +6,10 @@
     <div class="text-muted small">Последние 500 действий</div>
   </div>
   <div class="d-flex gap-2">
+    <a class="btn btn-soft" href="/admin/audit.csv">CSV</a>
+    <form method="post" action="/admin/audit/clear" onsubmit="return confirm('Очистить журнал аудита?');">
+      <button type="submit" class="btn btn-soft">Очистить</button>
+    </form>
     <a class="btn btn-soft" href="/admin/users">Пользователи</a>
     <a class="btn btn-soft" href="/">На главную</a>
   </div>

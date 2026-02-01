@@ -24,6 +24,8 @@ app.use(express.json());
 
 app.use(
   session({
+    // Railway / reverse-proxy: helps secure cookies + sessions work correctly
+    proxy: true,
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -45,6 +47,34 @@ app.use((req, res, next) => {
   res.locals.title = res.locals.title || 'Parking GIT';
   res.locals.bodyClass = res.locals.bodyClass || '';
   res.locals.user = req.session?.user || null;
+  next();
+});
+
+// If browser auto-translation rewrites URLs into Russian, keep the app working.
+// (e.g. "/администратор/устройства" -> "/admin/devices")
+app.use((req, res, next) => {
+  const original = req.originalUrl || '';
+  const rules = [
+    { from: '/администратор', to: '/admin' },
+    { from: '/войти в систему', to: '/login' },
+    { from: '/вход', to: '/login' },
+    { from: '/выход', to: '/logout' },
+    { from: '/выход из системы', to: '/logout' },
+    { from: '/журнал', to: '/logs' },
+  ];
+
+  for (const r of rules) {
+    if (original === r.from || original.startsWith(r.from + '/') || original.startsWith(encodeURI(r.from) + '/')) {
+      const suffix = original.startsWith(r.from) ? original.slice(r.from.length) : original.slice(encodeURI(r.from).length);
+      const newUrl = r.to + suffix;
+      // For GET/HEAD it's safe to redirect.
+      if (req.method === 'GET' || req.method === 'HEAD') return res.redirect(302, newUrl);
+      // For POST/PUT/etc. keep the method and internally rewrite the URL.
+      req.url = newUrl;
+      return next();
+    }
+  }
+
   next();
 });
 
@@ -374,8 +404,12 @@ app.post('/login', async (req, res) => {
       zones: u.zones || [],
     };
 
-    await appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
-    return res.redirect('/');
+	    await appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
+	    // Ensure session is persisted before redirect (important behind some proxies/stores)
+	    return req.session.save((err) => {
+	      if (err) console.error('session save error:', err);
+	      res.redirect('/');
+	    });
   } catch (e) {
     return res.status(500).render('login', { title: 'Вход • Parking GIT', bodyClass: 'auth-page', error: 'Ошибка БД: ' + String(e?.message || e) });
   }
@@ -693,6 +727,48 @@ app.get('/admin/audit', adminRequired, async (req, res) => {
     bodyClass: 'admin-page',
     entries,
   });
+});
+
+// Export audit as CSV
+app.get('/admin/audit.csv', adminRequired, async (req, res) => {
+  const r = await dbQuery(
+    `SELECT ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua
+     FROM public.audit
+     ORDER BY ts DESC
+     LIMIT 5000`
+  );
+
+  const rows = r.rows.map((e) => [
+    e.ts,
+    e.actor_id,
+    e.actor_phone,
+    e.actor_fio,
+    e.action,
+    e.target_type,
+    e.target_id,
+    typeof e.details === 'string' ? e.details : JSON.stringify(e.details || null),
+    e.ip,
+    e.ua,
+  ]);
+
+  const header = ['ts', 'actor_id', 'actor_phone', 'actor_fio', 'action', 'target_type', 'target_id', 'details', 'ip', 'ua'];
+  const csv = [header, ...rows]
+    .map((r) => r.map((v) => {
+      const s = v == null ? '' : String(v);
+      const escaped = s.replace(/"/g, '""');
+      return /[",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+    }).join(','))
+    .join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="audit.csv"');
+  res.send(csv);
+});
+
+// Clear audit log
+app.post('/admin/audit/clear', adminRequired, async (req, res) => {
+  await dbQuery('DELETE FROM public.audit');
+  res.redirect('/admin/audit');
 });
 
 // --- bootstrap: create default admin if missing ---
