@@ -1,5 +1,16 @@
 <% const pageTitle = (typeof title !== "undefined" && title) ? title : "Журнал транзита"; %>
 <%- include('partials/header', { title: pageTitle, bodyClass, user }) %>
+
+<%
+  // EJS helpers must be defined server-side (a <script> tag runs in the browser and can't be used in <%= %>).
+  const formatTs = (v) => {
+    if (!v) return '';
+    const d = (v instanceof Date) ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+%>
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
     <h1 class="h4 mb-0">Журнал транзита</h1>
