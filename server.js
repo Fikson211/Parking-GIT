@@ -329,25 +329,27 @@ async function seedDevicesFromJson() {
     const type = String(d.type || 'http').trim() || 'http';
     const method = String(d.method || 'POST').toUpperCase();
     const url = String(d.url || d.endpoint || d.link || '').trim();
+    const ip = url && !/^https?:\/\//i.test(url) ? url : null;
     const zoneId = String(d.zone_id || d.zone || '').trim() || 'buffer';
     const sort = Number.isFinite(Number(d.sort)) ? Number(d.sort) : 0;
     const enabled = typeof d.enabled === 'boolean' ? d.enabled : true;
 
     // allow url empty (some devices can be placeholders), but keep it consistent
     await dbQuery(
-      `INSERT INTO public.devices (id, name, zone_id, type, method, url, enabled, sort, is_active, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, NOW())
+      `INSERT INTO public.devices (id, name, zone_id, type, method, url, ip, enabled, sort, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, NOW())
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          zone_id = COALESCE(EXCLUDED.zone_id, public.devices.zone_id),
          type = EXCLUDED.type,
          method = EXCLUDED.method,
          url = EXCLUDED.url,
+         ip = EXCLUDED.ip,
          enabled = EXCLUDED.enabled,
          sort = EXCLUDED.sort,
          is_active = TRUE,
          updated_at = NOW()`,
-      [id, name, zoneId, type, method, url, enabled, sort]
+      [id, name, zoneId, type, method, url, ip, enabled, sort]
     );
   }
 }
@@ -632,16 +634,18 @@ app.post('/admin/devices/create', adminRequired, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const zoneId = String(req.body.zoneId || '').trim();
   const method = String(req.body.method || 'http').trim();
-  const url = String(req.body.url || '').trim();
+  const endpoint = String(req.body.url || '').trim();
+  const ip = endpoint && !/^https?:\/\//i.test(endpoint) ? endpoint : null;
+  const url = endpoint;
 
   await dbQuery(
-    `INSERT INTO public.devices(id,name,zone_id,method,url,sort,is_active)
-     VALUES ($1,$2,$3,$4,$5,0,true)
-     ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url`,
-    [id, name, zoneId || null, method, url]
+    `INSERT INTO public.devices(id,name,zone_id,method,url,ip,sort,is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,0,true)
+     ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, zone_id=EXCLUDED.zone_id, method=EXCLUDED.method, url=EXCLUDED.url, ip=EXCLUDED.ip`,
+    [id, name, zoneId || null, method, url, ip]
   );
 
-  await appendAudit(req, 'create', 'device', id, { name, zoneId, method, url });
+  await appendAudit(req, 'create', 'device', id, { name, zoneId, method, url, ip });
   res.redirect('/admin/devices');
 });
 
@@ -650,17 +654,19 @@ app.post('/admin/devices/:id/update', adminRequired, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const zoneId = String(req.body.zoneId || '').trim();
   const method = String(req.body.method || 'http').trim();
-  const url = String(req.body.url || '').trim();
+  const endpoint = String(req.body.url || '').trim();
+  const ip = endpoint && !/^https?:\/\//i.test(endpoint) ? endpoint : null;
+  const url = endpoint;
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
 
   await dbQuery(
     `UPDATE public.devices
-     SET name=$2, zone_id=$3, method=$4, url=$5, is_active=$6
+     SET name=$2, zone_id=$3, method=$4, url=$5, ip=$6, is_active=$7
      WHERE id=$1`,
-    [id, name, zoneId || null, method, url, isActive]
+    [id, name, zoneId || null, method, url, ip, isActive]
   );
 
-  await appendAudit(req, 'update', 'device', id, { name, zoneId, method, url, isActive });
+  await appendAudit(req, 'update', 'device', id, { name, zoneId, method, url, ip, isActive });
   res.redirect('/admin/devices');
 });
 

@@ -54,6 +54,9 @@ async function ensureSchema() {
       type TEXT,
       method TEXT,
       url TEXT,
+      ip TEXT,
+      relay TEXT,
+      params JSONB,
       enabled BOOLEAN DEFAULT TRUE,
       sort INT DEFAULT 0,
       is_active BOOLEAN DEFAULT TRUE,
@@ -177,6 +180,9 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS type TEXT;`);
   await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS method TEXT;`);
   await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS url TEXT;`);
+  await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS ip TEXT;`);
+  await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS relay TEXT;`);
+  await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS params JSONB;`);
   await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS enabled BOOLEAN;`);
   await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS sort INT;`);
   await dbQuery(`ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS is_active BOOLEAN;`);
