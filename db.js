@@ -83,6 +83,23 @@ async function ensureSchema() {
     );
   `);
 
+  // Transit journal (UI: "Журнал транзита")
+  // Used by /logs, /logs.csv and /logs/clear
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS public.transit_events (
+      id BIGSERIAL PRIMARY KEY,
+      datetime TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      point TEXT,
+      event TEXT,
+      source TEXT,
+      result TEXT,
+      session TEXT
+    );
+  `);
+
+  // Helpful index for recent-first queries
+  await dbQuery(`CREATE INDEX IF NOT EXISTS idx_transit_events_datetime_desc ON public.transit_events(datetime DESC);`);
+
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS public.audit (
       id BIGSERIAL PRIMARY KEY,
@@ -220,6 +237,18 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.transit_logs ALTER COLUMN success SET DEFAULT TRUE;`);
   await dbQuery(`UPDATE public.transit_logs SET ts = COALESCE(ts, NOW()) WHERE ts IS NULL;`);
   await dbQuery(`UPDATE public.transit_logs SET success = COALESCE(success, TRUE) WHERE success IS NULL;`);
+
+  // transit_events (journal)
+  await dbQuery(`CREATE TABLE IF NOT EXISTS public.transit_events (id BIGSERIAL PRIMARY KEY);`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS datetime TIMESTAMPTZ;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS point TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS event TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS source TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS result TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS session TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ALTER COLUMN datetime SET DEFAULT NOW();`);
+  await dbQuery(`UPDATE public.transit_events SET datetime = COALESCE(datetime, NOW()) WHERE datetime IS NULL;`);
+  await dbQuery(`CREATE INDEX IF NOT EXISTS idx_transit_events_session ON public.transit_events (session);`);
 
   // audit
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS ts TIMESTAMPTZ;`);

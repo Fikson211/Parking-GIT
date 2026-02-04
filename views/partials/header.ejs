@@ -36,6 +36,7 @@
     .container{ max-width:1240px; margin:0 auto; padding:16px 16px 28px; }
     .topbar{
       display:flex; align-items:center; justify-content:space-between; gap:12px;
+      flex-wrap:wrap;
       padding:14px 16px; border-radius:16px;
       background: var(--card); border:1px solid var(--border);
       backdrop-filter: blur(10px); overflow:hidden;
@@ -46,9 +47,10 @@
     .muted{ color: var(--muted); font-size:13px; }
     .nav{
       margin-top:10px; display:flex; gap:8px; padding:10px 12px;
+      flex-wrap:wrap;
       border-radius:16px; background: var(--card2);
       border:1px solid var(--border); backdrop-filter: blur(10px);
-      overflow-x:auto; -webkit-overflow-scrolling:touch;
+      overflow-x:visible;
     }
     .tab{
       flex:0 0 auto; display:inline-flex; align-items:center;
