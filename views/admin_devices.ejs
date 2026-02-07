@@ -66,15 +66,32 @@
       <tbody>
         <% devices.forEach(d => { %>
           <tr>
-            <form method="post" action="/admin/devices/<%= d.id %>/update">
-              <td class="text-mono"><%= d.id %></td>
-              <td><input class="form-control form-control-sm" name="name" value="<%= d.name || '' %>" /></td>
-              <td>
-                <select class="form-select form-select-sm" name="zoneId">
-                  <option value="">—</option>
-                  <% zones.forEach(z => { %>
-                    <option value="<%= z.id %>" <%= (d.zoneId===z.id)?'selected':'' %>><%= z.name %></option>
-                  <% }) %>
+            <td class="text-mono"><%= d.id %></td>
+            <td><input form="devupd-<%= d.id %>" class="form-control form-control-sm" name="name" value="<%= d.name || '' %>" /></td>
+            <td>
+              <select form="devupd-<%= d.id %>" class="form-select form-select-sm" name="zoneId">
+                <option value="">—</option>
+                <% zones.forEach(z => { %>
+                  <option value="<%= z.id %>" <%= (d.zoneId===z.id)?'selected':'' %>><%= z.name %></option>
+                <% }) %>
+              </select>
+            </td>
+            <td>
+              <select form="devupd-<%= d.id %>" class="form-select form-select-sm" name="method">
+                <option value="http" <%= d.method==='http'?'selected':'' %>>http</option>
+                <option value="rodos" <%= d.method==='rodos'?'selected':'' %>>rodos</option>
+              </select>
+            </td>
+            <td><input form="devupd-<%= d.id %>" class="form-control form-control-sm" name="url" value="<%= d.url || '' %>" /></td>
+            <td class="text-center">
+              <input form="devupd-<%= d.id %>" class="form-check-input" type="checkbox" name="is_active" <%= d.isActive ? 'checked' : '' %> />
+            </td>
+            <td class="text-end">
+              <button class="btn btn-soft btn-sm" type="submit" form="devupd-<%= d.id %>">Обновить</button>
+              <form id="devupd-<%= d.id %>" method="post" action="/admin/devices/<%= d.id %>/update"></form>
+            </td>
+          </tr>
+        <% }) %>
                 </select>
               </td>
               <td>

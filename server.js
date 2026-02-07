@@ -10,6 +10,9 @@ const crypto = require('crypto');
 
 const { dbQuery, ensureSchema } = require('./db');
 
+// Fallback file log (when DB is temporarily unavailable)
+const FALLBACK_TRANSIT_LOG = path.join(__dirname, 'data', 'transit_events.jsonl');
+
 const app = express();
 app.set('trust proxy', 1);
 
@@ -112,14 +115,56 @@ function toMapById(rows) {
 }
 
 async function appendTransitEvent({ point, event, source, result, session: sessionId }) {
+  const entry = {
+    datetime: new Date().toISOString(),
+    point: point ?? null,
+    event: event ?? null,
+    source: source ?? null,
+    result: result ?? null,
+    session: sessionId ?? null,
+  };
+
   try {
     await dbQuery(
       `INSERT INTO public.transit_events(datetime, point, event, source, result, session)
        VALUES (NOW(), $1, $2, $3, $4, $5)`,
-      [point, event, source || null, result || null, sessionId || null]
+      [entry.point, entry.event, entry.source || null, entry.result || null, entry.session || null]
     );
+    return;
   } catch (e) {
-    // не падаем из-за логов
+    // DB может быть временно недоступна (например, при рестарте). Тогда пишем в файл, чтобы журнал не "умирал".
+    try {
+      fs.mkdirSync(path.dirname(FALLBACK_TRANSIT_LOG), { recursive: true });
+      fs.appendFileSync(FALLBACK_TRANSIT_LOG, JSON.stringify(entry) + '\n', 'utf-8');
+    } catch (fe) {
+      // если даже файл не пишется — просто логируем
+    }
+    console.error('⚠️ transit log write failed:', e?.message || e);
+  }
+}
+
+
+
+function readFallbackTransitEvents(limit = 500) {
+  try {
+    if (!fs.existsSync(FALLBACK_TRANSIT_LOG)) return [];
+    const raw = fs.readFileSync(FALLBACK_TRANSIT_LOG, 'utf-8');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const tail = lines.slice(Math.max(0, lines.length - limit));
+    const items = [];
+    for (const line of tail) {
+      try {
+        const o = JSON.parse(line);
+        items.push(o);
+      } catch {
+        // skip bad line
+      }
+    }
+    // newest first
+    items.sort((a, b) => String(b.datetime || '').localeCompare(String(a.datetime || '')));
+    return items;
+  } catch {
+    return [];
   }
 }
 
@@ -426,6 +471,12 @@ app.post('/login', async (req, res) => {
   }
 });
 
+
+// Allow GET /logout because UI uses a link. (POST is kept too.)
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/login'));
+});
+
 app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
@@ -465,14 +516,40 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
   const user = req.session.user;
 
   const d = devices[deviceId];
-  if (!d || d.is_active === false) return res.status(404).json({ ok: false, error: 'Устройство не найдено' });
+  if (!d || d.is_active === false) {
+    return res.status(404).json({ ok: false, error: 'Устройство не найдено' });
+  }
+  if (d.enabled === false) {
+    // device disabled in admin
+    await appendTransitEvent({
+      point: d.name || deviceId,
+      event: 'open',
+      source: user.phone || user.id,
+      result: 'disabled',
+      session: String(req.sessionID || ''),
+    });
+    return res.status(409).json({ ok: false, error: 'Устройство отключено' });
+  }
 
   const allowed = (user.role === 'admin') || (Array.isArray(user.zones) && user.zones.includes(d.zoneId));
-  if (!allowed) return res.status(403).json({ ok: false, error: 'Нет доступа' });
+  if (!allowed) {
+    // log denied attempts too (helps расследования)
+    await appendTransitEvent({
+      point: d.name || deviceId,
+      event: 'open',
+      source: user.phone || user.id,
+      result: 'denied',
+      session: String(req.sessionID || ''),
+    });
+    return res.status(403).json({ ok: false, error: 'Нет доступа' });
+  }
 
-  // В этом шаблоне мы просто логируем событие. Реальный вызов реле/контроллера можно добавить позже.
+  // Пока только логируем событие (реальный вызов реле/контроллера можно добавить позже).
+  const zoneName = zones[d.zoneId]?.name;
+  const point = zoneName ? `${d.name || deviceId} — ${zoneName}` : (d.name || deviceId);
+
   await appendTransitEvent({
-    point: zones[d.zoneId]?.name || d.zoneId,
+    point,
     event: 'open',
     source: user.phone || user.id,
     result: 'ok',
@@ -482,6 +559,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
   await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId });
   return res.json({ ok: true });
 });
+
 
 // --- logs ---
 app.get('/logs', authRequired, async (req, res) => {
@@ -508,46 +586,86 @@ app.get('/logs', authRequired, async (req, res) => {
 
   const whereSql = wh.length ? `WHERE ${wh.join(' AND ')}` : '';
 
-  const r = await dbQuery(
-    `SELECT datetime, point, event, source, result, session
-     FROM public.transit_events
-     ${whereSql}
-     ORDER BY datetime DESC
-     LIMIT 500`,
-    args
-  );
+  let logs = [];
+  let points = [];
+  let events = [];
 
-  // options for filters
-  const pts = await dbQuery(`SELECT DISTINCT point FROM public.transit_events ORDER BY point ASC LIMIT 200`);
-  const evs = await dbQuery(`SELECT DISTINCT event FROM public.transit_events ORDER BY event ASC LIMIT 200`);
+  try {
+    const r = await dbQuery(
+      `SELECT datetime, point, event, source, result, session
+       FROM public.transit_events
+       ${whereSql}
+       ORDER BY datetime DESC
+       LIMIT 500`,
+      args
+    );
+    logs = r.rows;
+
+    // options for filters
+    const pts = await dbQuery(`SELECT DISTINCT point FROM public.transit_events ORDER BY point ASC LIMIT 200`);
+    const evs = await dbQuery(`SELECT DISTINCT event FROM public.transit_events ORDER BY event ASC LIMIT 200`);
+    points = pts.rows.map((x) => x.point).filter(Boolean);
+    events = evs.rows.map((x) => x.event).filter(Boolean);
+  } catch (e) {
+    // Fallback to local file (useful when DB is restarting / temporary outage)
+    const all = readFallbackTransitEvents(2000);
+
+    const from = filters.date_from ? new Date(filters.date_from + 'T00:00:00Z') : null;
+    const to = filters.date_to ? new Date(filters.date_to + 'T00:00:00Z') : null;
+
+    const filtered = all.filter((x) => {
+      if (filters.point && x.point !== filters.point) return false;
+      if (filters.event && x.event !== filters.event) return false;
+      const dt = x.datetime ? new Date(x.datetime) : null;
+      if (from && dt && dt < from) return false;
+      if (to && dt && dt >= new Date(to.getTime() + 24 * 60 * 60 * 1000)) return false;
+      return true;
+    });
+
+    logs = filtered.slice(0, 500);
+
+    points = Array.from(new Set(all.map((x) => x.point).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
+    events = Array.from(new Set(all.map((x) => x.event).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
+
+    console.warn('⚠️ /logs using fallback file because DB query failed:', e?.message || e);
+  }
+
 
   res.render('logs', {
     title: 'Журнал транзита',
     bodyClass: 'logs-page',
     user,
-    logs: r.rows,
+    logs,
     filters,
-    options: { points: pts.rows.map((x) => x.point).filter(Boolean), events: evs.rows.map((x) => x.event).filter(Boolean) },
+    options: { points, events },
     exportUrlBase: '/logs.csv',
   });
 });
 
 app.get('/logs.csv', authRequired, async (req, res) => {
-  const r = await dbQuery(
-    `SELECT datetime, point, event, source, result, session
-     FROM public.transit_events
-     ORDER BY datetime DESC
-     LIMIT 500`
-  );
+  let rows = [];
+  try {
+    const r = await dbQuery(
+      `SELECT datetime, point, event, source, result, session
+       FROM public.transit_events
+       ORDER BY datetime DESC
+       LIMIT 500`
+    );
+    rows = r.rows;
+  } catch (e) {
+    rows = readFallbackTransitEvents(500);
+    console.warn('⚠️ /logs.csv using fallback file because DB query failed:', e?.message || e);
+  }
 
   const lines = ['datetime,point,event,source,result,session'];
-  r.rows.forEach((l) => {
+  rows.forEach((l) => {
     const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     lines.push([l.datetime, l.point, l.event, l.source, l.result, l.session].map(esc).join(','));
   });
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.send(lines.join('\n'));
 });
+
 
 app.post('/logs/clear', adminRequired, async (req, res) => {
   try {
@@ -556,8 +674,15 @@ app.post('/logs/clear', adminRequired, async (req, res) => {
   } catch (e) {
     console.error('clear_transit_log error', e);
   }
+
+  // Clear fallback file too
+  try {
+    if (fs.existsSync(FALLBACK_TRANSIT_LOG)) fs.writeFileSync(FALLBACK_TRANSIT_LOG, '', 'utf-8');
+  } catch {}
+
   return res.redirect('/logs');
 });
+
 
 // --- admin: users/devices/zones/audit ---
 app.get('/admin/users', adminRequired, async (req, res) => {
@@ -676,7 +801,7 @@ app.get('/admin/zones', adminRequired, async (req, res) => {
   // group devices by zone_id for удобного отображения в админке
   const devicesByZone = {};
   for (const d of Object.values(devices || {})) {
-    const zid = String(d.zone_id || d.zone || '').trim();
+    const zid = String(d.zoneId || d.zone_id || d.zone || '').trim();
     if (!zid) continue;
     (devicesByZone[zid] ||= []).push(d);
   }
