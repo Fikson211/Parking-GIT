@@ -64,9 +64,10 @@
           <th>Дата/время</th>
           <th>Точка</th>
           <th>Событие</th>
-          <th class="d-none d-md-table-cell">Источник</th>
+          <th class="d-none d-md-table-cell">Кто</th>
+          <th class="d-none d-md-table-cell">Телефон</th>
           <th class="d-none d-md-table-cell">Результат</th>
-          <th class="d-none d-md-table-cell">Сессия</th>
+          <th class="d-none d-lg-table-cell">Сессия</th>
         </tr>
       </thead>
       <tbody>
@@ -75,13 +76,14 @@
             <td class="text-nowrap"><%= formatTs(e.datetime || e.ts || e.time) %></td>
             <td><span class="badge badge-soft"><%= e.point || '' %></span></td>
             <td><%= e.event || '' %></td>
-            <td class="d-none d-md-table-cell"><%= e.source || '' %></td>
+            <td class="d-none d-md-table-cell"><%= e.actor_fio || '' %></td>
+            <td class="d-none d-md-table-cell"><%= e.actor_phone || '' %></td>
             <td class="d-none d-md-table-cell"><%= e.result || '' %></td>
-            <td class="d-none d-md-table-cell"><%= e.session || '' %></td>
+            <td class="d-none d-lg-table-cell"><%= e.session || '' %></td>
           </tr>
         <% }) %>
         <% if (!logs || !logs.length) { %>
-          <tr><td colspan="6" class="text-muted p-4">Пока пусто</td></tr>
+          <tr><td colspan="7" class="text-muted p-4">Пока пусто</td></tr>
         <% } %>
       </tbody>
     </table>

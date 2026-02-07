@@ -93,7 +93,10 @@ async function ensureSchema() {
       event TEXT,
       source TEXT,
       result TEXT,
-      session TEXT
+      session TEXT,
+      actor_id TEXT,
+      actor_phone TEXT,
+      actor_fio TEXT
     );
   `);
 
@@ -246,6 +249,9 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS source TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS result TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS session TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_id TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_phone TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_fio TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ALTER COLUMN datetime SET DEFAULT NOW();`);
   await dbQuery(`UPDATE public.transit_events SET datetime = COALESCE(datetime, NOW()) WHERE datetime IS NULL;`);
   await dbQuery(`CREATE INDEX IF NOT EXISTS idx_transit_events_session ON public.transit_events (session);`);

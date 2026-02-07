@@ -114,7 +114,7 @@ function toMapById(rows) {
   return out;
 }
 
-async function appendTransitEvent({ point, event, source, result, session: sessionId }) {
+async function appendTransitEvent({ point, event, source, result, session: sessionId, actor_id, actor_phone, actor_fio }) {
   const entry = {
     datetime: new Date().toISOString(),
     point: point ?? null,
@@ -122,13 +122,25 @@ async function appendTransitEvent({ point, event, source, result, session: sessi
     source: source ?? null,
     result: result ?? null,
     session: sessionId ?? null,
+    actor_id: actor_id ?? null,
+    actor_phone: actor_phone ?? null,
+    actor_fio: actor_fio ?? null,
   };
 
   try {
     await dbQuery(
-      `INSERT INTO public.transit_events(datetime, point, event, source, result, session)
-       VALUES (NOW(), $1, $2, $3, $4, $5)`,
-      [entry.point, entry.event, entry.source || null, entry.result || null, entry.session || null]
+      `INSERT INTO public.transit_events(datetime, point, event, source, result, session, actor_id, actor_phone, actor_fio)
+       VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        entry.point,
+        entry.event,
+        entry.source || null,
+        entry.result || null,
+        entry.session || null,
+        entry.actor_id || null,
+        entry.actor_phone || null,
+        entry.actor_fio || null,
+      ]
     );
     return;
   } catch (e) {
@@ -529,6 +541,9 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
       source: user.phone || user.id,
       result: 'disabled',
       session: String(req.sessionID || ''),
+      actor_id: user.id,
+      actor_phone: user.phone,
+      actor_fio: user.fio,
     });
     return res.status(409).json({ ok: false, error: 'Устройство отключено' });
   }
@@ -542,6 +557,9 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
       source: user.phone || user.id,
       result: 'denied',
       session: String(req.sessionID || ''),
+      actor_id: user.id,
+      actor_phone: user.phone,
+      actor_fio: user.fio,
     });
     return res.status(403).json({ ok: false, error: 'Нет доступа' });
   }
@@ -556,6 +574,9 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
     source: user.phone || user.id,
     result: 'ok',
     session: String(req.sessionID || ''),
+      actor_id: user.id,
+      actor_phone: user.phone,
+      actor_fio: user.fio,
   });
 
   await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId });
@@ -595,7 +616,7 @@ app.get('/logs', adminRequired, async (req, res) => {
 
   try {
     const r = await dbQuery(
-      `SELECT datetime, point, event, source, result, session
+      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone
        FROM public.transit_events
        ${whereSql}
        ORDER BY datetime DESC
@@ -649,7 +670,7 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
   let rows = [];
   try {
     const r = await dbQuery(
-      `SELECT datetime, point, event, source, result, session
+      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone
        FROM public.transit_events
        ORDER BY datetime DESC
        LIMIT 500`
@@ -660,10 +681,10 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
     console.warn('⚠️ /logs.csv using fallback file because DB query failed:', e?.message || e);
   }
 
-  const lines = ['datetime,point,event,source,result,session'];
+  const lines = ['datetime,point,event,actor_fio,actor_phone,source,result,session'];
   rows.forEach((l) => {
     const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-    lines.push([l.datetime, l.point, l.event, l.source, l.result, l.session].map(esc).join(','));
+    lines.push([l.datetime, l.point, l.event, l.actor_fio, l.actor_phone, l.source, l.result, l.session].map(esc).join(','));
   });
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.send(lines.join('\n'));
