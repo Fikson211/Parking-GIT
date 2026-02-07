@@ -3,15 +3,15 @@
 <% const _byZone = (typeof byZone !== 'undefined' && byZone) ? byZone : []; %>
 
 <div class="card">
-  <div class="row" style="align-items:center;">
+  <div class="row" style="align-items:flex-start;">
     <div class="field" style="flex: 1 1 420px; min-width: 260px;">
       <h1 style="margin:0 0 4px; font-size: 22px;">Дашборд</h1>
-      <div class="muted">Управление доступом</div>
+      <div class="muted">Выберите зону — затем откройте нужное устройство</div>
     </div>
-    <div class="right" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <div class="right page-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <% if (user && user.role === 'admin') { %>
-        <a class="btn" href="/logs">Журнал транзита</a>
-        <a class="btn" href="/admin/users">Админка</a>
+        <a class="btn btn-soft" href="/logs">Журнал транзита</a>
+        <a class="btn btn-soft" href="/admin/users">Админка</a>
       <% } %>
     </div>
   </div>
@@ -21,39 +21,53 @@
   <div class="card">
     <div class="muted">У вас пока нет назначенных зон/устройств. Попросите админа добавить доступ.</div>
   </div>
-<% } %>
-
-<% _byZone.forEach(z => { %>
+<% } else { %>
   <div class="card">
-    <div class="row" style="align-items:center;">
-      <div class="field" style="flex: 1 1 420px; min-width: 240px;">
-        <h2 style="margin:0 0 4px; font-size: 16px;"><%= z.zoneName %></h2>
-        <div class="muted" style="font-size:12px;"><%= z.zoneId %></div>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <div>
+        <h2 class="h6 mb-0">Зоны</h2>
+        <div class="text-muted small">Нажмите на зону, чтобы увидеть устройства</div>
       </div>
-      <span class="badge">Зона</span>
+      <div class="text-muted small"><%= _byZone.length %> шт.</div>
     </div>
 
-    <div class="spacer"></div>
-
-    <div class="row">
-      <% (z.devices || []).forEach(d => { %>
-        <button class="btn btn-primary" type="button"
-          style="flex: 1 1 260px; min-width: 240px;"
-          data-device-id="<%= d.id %>">
-          <span style="display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;">
-            <span style="text-align:left; min-width:0;">
-              <div style="font-weight:700; line-height:1.2;"><%= d.name %></div>
-              <div class="muted" style="font-size:12px; overflow:hidden; text-overflow:ellipsis;"><%= d.id %></div>
-            </span>
-            <span style="opacity:.75; font-size:18px;">›</span>
-          </span>
+    <div class="zone-grid" id="zoneGrid">
+      <% _byZone.forEach((z, idx) => { %>
+        <button type="button" class="zone-tile" data-zone-index="<%= idx %>">
+          <div class="zone-title"><%= z.zoneName %></div>
+          <div class="zone-sub text-mono"><%= z.zoneId %></div>
+          <div class="zone-meta">
+            <span class="badge-soft"><%= (z.devices || []).length %> устройств</span>
+          </div>
         </button>
       <% }) %>
     </div>
   </div>
-<% }) %>
+
+  <div class="card" id="devicesPanel" style="display:none;">
+    <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
+      <div style="min-width:240px;">
+        <h2 class="h6 mb-0" id="devicesTitle">Устройства</h2>
+        <div class="text-muted small text-mono" id="devicesSub"></div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center page-actions" style="margin-top:0!important;">
+        <button class="btn btn-ghost btn-sm" type="button" id="devicesClose">Скрыть</button>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="device-grid" id="devicesGrid"></div>
+  </div>
+
+  <div class="card" id="devicesHint">
+    <div class="muted">Сначала выберите зону выше — устройства появятся ниже.</div>
+  </div>
+<% } %>
 
 <script>
+  const BY_ZONE = <%- JSON.stringify(_byZone) %>;
+
   async function openDevice(id, btn){
     const oldHtml = btn.innerHTML;
     btn.disabled = true;
@@ -71,9 +85,91 @@
       btn.disabled = false;
     }
   }
-  document.querySelectorAll('[data-device-id]').forEach(btn=>{
-    btn.addEventListener('click', ()=>openDevice(btn.dataset.deviceId, btn));
-  });
+
+  (function(){
+    const zoneGrid = document.getElementById('zoneGrid');
+    if (!zoneGrid) return;
+
+    const panel = document.getElementById('devicesPanel');
+    const grid = document.getElementById('devicesGrid');
+    const title = document.getElementById('devicesTitle');
+    const sub = document.getElementById('devicesSub');
+    const hint = document.getElementById('devicesHint');
+
+    function clearActive(){
+      zoneGrid.querySelectorAll('.zone-tile').forEach(b=>b.classList.remove('active'));
+    }
+
+    function renderDevices(zoneIdx){
+      const z = BY_ZONE[zoneIdx];
+      if (!z) return;
+
+      clearActive();
+      const activeBtn = zoneGrid.querySelector('[data-zone-index="' + zoneIdx + '"]');
+      if (activeBtn) activeBtn.classList.add('active');
+
+      if (hint) hint.style.display = 'none';
+      if (panel) panel.style.display = '';
+
+      if (title) title.textContent = z.zoneName || 'Устройства';
+      if (sub) sub.textContent = z.zoneId || '';
+
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      (z.devices || []).forEach(d => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary device-btn';
+        btn.type = 'button';
+        btn.dataset.deviceId = d.id;
+        btn.innerHTML = `
+          <span style="display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;">
+            <span style="text-align:left; min-width:0;">
+              <div style="font-weight:800; line-height:1.2;">${escapeHtml(d.name || '')}</div>
+              <div class="muted" style="font-size:12px; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.id || '')}</div>
+            </span>
+            <span style="opacity:.75; font-size:18px;">›</span>
+          </span>
+        `;
+        grid.appendChild(btn);
+      });
+    }
+
+    function escapeHtml(s){
+      return String(s)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+
+    zoneGrid.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-zone-index]');
+      if (!btn) return;
+      renderDevices(btn.getAttribute('data-zone-index'));
+    });
+
+    if (grid){
+      grid.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-device-id]');
+        if (!btn) return;
+        openDevice(btn.dataset.deviceId, btn);
+      });
+    }
+
+    const close = document.getElementById('devicesClose');
+    if (close){
+      close.addEventListener('click', () => {
+        if (panel) panel.style.display = 'none';
+        if (hint) hint.style.display = '';
+        clearActive();
+        if (grid) grid.innerHTML = '';
+        if (title) title.textContent = 'Устройства';
+        if (sub) sub.textContent = '';
+      });
+    }
+  })();
 </script>
 
 <%- include('partials/footer') %>

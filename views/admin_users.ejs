@@ -2,14 +2,16 @@
 
 <div class="mb-3">
   <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
-    <h1 class="h4 mb-0">Пользователи</h1>
+    <div style="min-width:240px;">
+      <h1 class="h4 mb-0">Пользователи</h1>
+      <div class="text-muted small">Минималистичный список + карточка редактирования. PIN можно посмотреть и поменять.</div>
+    </div>
     <div class="d-flex flex-wrap gap-2 align-items-center page-actions">
       <a class="btn btn-soft" href="/admin/devices">Устройства</a>
       <a class="btn btn-soft" href="/admin/zones">Зоны</a>
       <a class="btn btn-soft" href="/admin/audit">Аудит</a>
     </div>
   </div>
-  <div class="text-muted small">PIN (пароль) генерируется автоматически. Админ может посмотреть и изменить.</div>
 </div>
 
 <div class="card card-glass p-3 mb-3">
@@ -34,116 +36,224 @@
       <button class="btn btn-gold w-100" type="submit">Создать</button>
     </div>
     <div class="col-12">
-      <div class="small text-muted text-wrap">Зоны можно назначить после создания (в списке ниже).</div>
+      <div class="small text-muted text-wrap">Зоны назначаются после создания — в карточке пользователя.</div>
     </div>
   </form>
 </div>
 
-<div class="card card-glass p-0 overflow-hidden">
-  <div class="table-responsive">
-    <table class="table table-dark table-hover align-middle m-0">
-      <thead>
-        <tr>
-          <th>ФИО</th>
-          <th>Телефон</th>
-          <th>PIN</th>
-          <th>Роль</th>
-          <th>Зоны</th>
-          <th>Активен</th>
-          <th class="text-end">Действия</th>
-        </tr>
-      </thead>
-      <tbody>
-        <% (users || []).forEach(u => { %>
-          <tr>
-            <td style="min-width:220px">
-              <input form="upd-<%= u.id %>" name="fio" class="form-control form-control-sm" value="<%= u.fio || '' %>" />
-            </td>
-            <td style="min-width:170px">
-              <input form="upd-<%= u.id %>" name="phone" class="form-control form-control-sm" value="<%= (u.phone || '').replace(/\D/g,'') %>" />
-            </td>
-            <td style="min-width:190px">
-              <div class="d-flex gap-1 align-items-center flex-wrap">
-                <input
-                  id="pin-input-<%= u.id %>"
-                  form="upd-<%= u.id %>"
-                  name="pin"
-                  class="form-control form-control-sm"
-                  type="password"
-                  value="<%= (u.pin || '').replace(/\D/g,'') %>"
-                  placeholder="PIN"
-                  style="min-width:120px; flex:1 1 120px"
-                />
-                <button
-                  type="button"
-                  class="btn btn-soft btn-sm"
-                  data-toggle-pin="pin-input-<%= u.id %>"
-                  title="Показать/скрыть"
-                >👁</button>
-              </div>
-            </td>
-            <td style="min-width:110px">
-              <select form="upd-<%= u.id %>" name="role" class="form-select form-select-sm">
-                <option value="user" <%= (u.role === 'user') ? 'selected' : '' %>>user</option>
-                <option value="admin" <%= (u.role === 'admin') ? 'selected' : '' %>>admin</option>
-              </select>
-            </td>
-            <td style="min-width:260px">
-              <div class="d-flex flex-wrap gap-1">
-                <% (zones || []).forEach(z => { %>
-                  <label class="zone-chip">
-                    <input
-                      form="upd-<%= u.id %>"
-                      class="form-check-input me-1"
-                      type="checkbox"
-                      name="zones"
-                      value="<%= z.id %>"
-                      <%= (Array.isArray(u.zones) && u.zones.includes(z.id)) ? 'checked' : '' %>
-                    />
-                    <span><%= z.name %></span>
-                  </label>
-                <% }) %>
-              </div>
-            </td>
-            <td style="min-width:90px">
-              <div class="form-check form-switch">
-                <input
-                  form="upd-<%= u.id %>"
-                  class="form-check-input"
-                  type="checkbox"
-                  name="is_active"
-                  <%= (u.is_active !== false) ? 'checked' : '' %>
-                >
-              </div>
-            </td>
-            <td class="text-end" style="min-width:250px">
-              <div class="d-flex gap-2 justify-content-end flex-wrap align-items-center">
-                <button class="btn btn-soft btn-sm" type="submit" form="upd-<%= u.id %>">Сохранить</button>
-                <button class="btn btn-gold btn-sm" type="submit" form="pinreset-<%= u.id %>">Сброс PIN</button>
-              </div>
+<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
+  <div class="text-muted small">Всего: <%= (users || []).length %></div>
+  <div style="flex: 1 1 280px; max-width: 380px;">
+    <input id="userSearch" class="form-control" placeholder="Поиск: ФИО / телефон" />
+  </div>
+</div>
 
-              <!-- Empty forms: inputs/buttons are linked via form="..." attribute -->
-              <form id="upd-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/update"></form>
-              <form id="pinreset-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/reset_pin" class="m-0"></form>
-            </td>
-          </tr>
-        <% }) %>
-        <% if (!users || !users.length) { %>
-          <tr><td colspan="7" class="text-muted p-3">Пользователей нет</td></tr>
-        <% } %>
-      </tbody>
-    </table>
+<div class="users-grid" id="usersGrid">
+  <% (users || []).forEach(u => { %>
+    <div class="user-card" data-user-id="<%= u.id %>">
+      <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+        <div style="min-width:220px; flex:1 1 220px;">
+          <div class="user-name"><%= u.fio || '—' %></div>
+          <div class="user-sub text-mono"><%= (u.phone || '').replace(/\D/g,'') %></div>
+        </div>
+        <div class="d-flex gap-1 flex-wrap align-items-center" style="justify-content:flex-end;">
+          <span class="badge-soft"><%= (u.role === 'admin') ? 'admin' : 'user' %></span>
+          <span class="badge-soft"><%= (u.is_active !== false) ? 'active' : 'off' %></span>
+          <span class="badge-soft"><%= Array.isArray(u.zones) ? u.zones.length : 0 %> зон</span>
+        </div>
+      </div>
+      <div class="user-actions">
+        <button class="btn btn-soft btn-sm" type="button" data-edit-user="<%= u.id %>">Настроить</button>
+        <span class="muted small">id: <span class="text-mono"><%= u.id %></span></span>
+      </div>
+    </div>
+  <% }) %>
+
+  <% if (!users || !users.length) { %>
+    <div class="card">
+      <div class="muted">Пользователей нет</div>
+    </div>
+  <% } %>
+</div>
+
+<!-- Modal: compact user editor -->
+<div class="modal-backdrop" id="userModal" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Редактирование пользователя">
+    <div class="modal-header">
+      <div style="min-width:0;">
+        <div class="modal-title" id="mTitle">Пользователь</div>
+        <div class="text-muted small text-mono" id="mSub"></div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" id="mClose">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <form id="userUpdateForm" method="post" action="">
+        <div class="modal-grid">
+          <div>
+            <label class="form-label">ФИО</label>
+            <input name="fio" class="form-control" id="mFio" required />
+          </div>
+
+          <div>
+            <label class="form-label">Телефон</label>
+            <input name="phone" class="form-control" id="mPhone" required />
+          </div>
+
+          <div>
+            <label class="form-label">Роль</label>
+            <select name="role" class="form-select" id="mRole">
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="form-label">Активен</label>
+            <div class="form-check form-switch" style="align-items:center;">
+              <input class="form-check-input" type="checkbox" id="mActive" name="is_active">
+              <span class="text-muted small">вкл/выкл</span>
+            </div>
+          </div>
+
+          <div style="grid-column: 1 / -1;">
+            <label class="form-label">PIN (пароль)</label>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <span class="badge-soft text-mono" id="mCurPin" data-pin="">PIN: ••••</span>
+              <button type="button" class="btn btn-soft btn-sm" id="mCurPinToggle" title="Показать/скрыть">👁</button>
+              <div style="flex: 1 1 260px; min-width: 220px;">
+                <input name="pin" class="form-control" id="mNewPin" type="password" inputmode="numeric" placeholder="Новый PIN (4 цифры)" />
+                <div class="text-muted small">Оставьте пустым — PIN не изменится.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="grid-column: 1 / -1;">
+            <label class="form-label">Зоны доступа</label>
+            <div class="d-flex flex-wrap gap-1" id="mZones">
+              <% (zones || []).forEach(z => { %>
+                <label class="zone-chip">
+                  <input class="form-check-input me-1" type="checkbox" name="zones" value="<%= z.id %>" data-zone-id="<%= z.id %>">
+                  <span><%= z.name %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <form id="userResetForm" method="post" action=""></form>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-soft" type="button" id="mCancel">Отмена</button>
+      <button class="btn btn-gold" type="submit" form="userResetForm">Сброс PIN</button>
+      <button class="btn btn-primary" type="submit" form="userUpdateForm">Сохранить</button>
+    </div>
   </div>
 </div>
 
 <script>
-  // Toggle PIN visibility for admin
-  document.querySelectorAll('[data-toggle-pin]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-toggle-pin');
-      const inp = document.getElementById(id);
-      if (!inp) return;
-      inp.type = (inp.type === 'password') ? 'text' : 'password';
+  const USERS = <%- JSON.stringify(users || []) %>;
+
+  const modal = document.getElementById('userModal');
+  const closeBtn = document.getElementById('mClose');
+  const cancelBtn = document.getElementById('mCancel');
+
+  const t = document.getElementById('mTitle');
+  const s = document.getElementById('mSub');
+
+  const fio = document.getElementById('mFio');
+  const phone = document.getElementById('mPhone');
+  const role = document.getElementById('mRole');
+  const active = document.getElementById('mActive');
+
+  const curPin = document.getElementById('mCurPin');
+  const curPinToggle = document.getElementById('mCurPinToggle');
+  const newPin = document.getElementById('mNewPin');
+
+  const updateForm = document.getElementById('userUpdateForm');
+  const resetForm = document.getElementById('userResetForm');
+
+  function digitsOnly(v){
+    return String(v || '').replace(/\D/g, '');
+  }
+
+  function openModal(userId){
+    const u = USERS.find(x => String(x.id) === String(userId));
+    if (!u) return;
+
+    // header
+    t.textContent = u.fio || 'Пользователь';
+    s.textContent = digitsOnly(u.phone) ? digitsOnly(u.phone) : String(u.id);
+
+    // forms actions
+    updateForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/update';
+    resetForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/reset_pin';
+
+    // fields
+    fio.value = u.fio || '';
+    phone.value = digitsOnly(u.phone || '');
+    role.value = (u.role === 'admin') ? 'admin' : 'user';
+    active.checked = (u.is_active !== false);
+
+    // PIN
+    const p = digitsOnly(u.pin || '');
+    curPin.dataset.pin = p;
+    curPin.dataset.shown = '0';
+    curPin.textContent = 'PIN: ' + (p ? '••••' : '—');
+    newPin.value = '';
+
+    // zones
+    const assigned = Array.isArray(u.zones) ? u.zones.map(String) : [];
+    document.querySelectorAll('#mZones [data-zone-id]').forEach(inp => {
+      inp.checked = assigned.includes(String(inp.getAttribute('data-zone-id')));
+    });
+
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+  }
+
+  function closeModal(){
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open');
+  }
+
+  curPinToggle?.addEventListener('click', () => {
+    const p = curPin.dataset.pin || '';
+    const shown = curPin.dataset.shown === '1';
+    curPin.dataset.shown = shown ? '0' : '1';
+    curPin.textContent = 'PIN: ' + (p ? (shown ? '••••' : p) : '—');
+  });
+
+  document.getElementById('usersGrid')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-edit-user]');
+    if (!btn) return;
+    openModal(btn.getAttribute('data-edit-user'));
+  });
+
+  closeBtn?.addEventListener('click', closeModal);
+  cancelBtn?.addEventListener('click', closeModal);
+
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.classList.contains('open')) closeModal();
+  });
+
+  // Search filter
+  const search = document.getElementById('userSearch');
+  search?.addEventListener('input', () => {
+    const q = (search.value || '').trim().toLowerCase();
+    document.querySelectorAll('#usersGrid [data-user-id]').forEach(card => {
+      const id = card.getAttribute('data-user-id');
+      const u = USERS.find(x => String(x.id) === String(id));
+      const hay = ((u?.fio || '') + ' ' + digitsOnly(u?.phone || '') + ' ' + String(u?.id || '')).toLowerCase();
+      card.style.display = (!q || hay.includes(q)) ? '' : 'none';
     });
   });
 </script>
