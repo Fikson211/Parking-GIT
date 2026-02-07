@@ -406,7 +406,9 @@ function authRequired(req, res, next) {
 
 function adminRequired(req, res, next) {
   if (!req.session?.user) return res.redirect('/login');
-  if (req.session.user.role !== 'admin') return res.status(403).send('Доступ запрещён');
+  // Для обычных пользователей закрываем всё, кроме Дашборда.
+  // Вместо 403 делаем редирект на главную, чтобы UI выглядел как приложение, а не как ошибка.
+  if (req.session.user.role !== 'admin') return res.redirect('/');
   next();
 }
 
@@ -562,7 +564,8 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
 
 
 // --- logs ---
-app.get('/logs', authRequired, async (req, res) => {
+// Журнал транзита доступен только администратору
+app.get('/logs', adminRequired, async (req, res) => {
   const user = req.session.user;
 
   const filters = {
@@ -642,7 +645,7 @@ app.get('/logs', authRequired, async (req, res) => {
   });
 });
 
-app.get('/logs.csv', authRequired, async (req, res) => {
+app.get('/logs.csv', adminRequired, async (req, res) => {
   let rows = [];
   try {
     const r = await dbQuery(
@@ -703,8 +706,9 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const zones = parseZonesInput(req.body.zones);
 
-  // PIN: автоген
-  const pin = genPin(4);
+  // PIN: можно задать вручную (как пароль), либо автоген
+  const pinFromForm = digitsOnly(req.body.pin);
+  const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : genPin(4);
 
   await dbQuery(
     `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
@@ -712,7 +716,7 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
     [id, fio || null, phone, pin, role, zones]
   );
 
-  await appendAudit(req, 'create', 'user', id, { fio, phone, role, zones, pin_generated: true });
+  await appendAudit(req, 'create', 'user', id, { fio, phone, role, zones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
   res.redirect('/admin/users');
 });
 
@@ -723,15 +727,19 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
   const zones = parseZonesInput(req.body.zones);
+  const pinFromForm = digitsOnly(req.body.pin);
+  const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : null;
 
   await dbQuery(
     `UPDATE public.users
-     SET fio=$2, phone=$3, role=$4, zones=$5, is_active=$6
+     SET fio=$2, phone=$3, role=$4, zones=$5, is_active=$6,
+         pin = COALESCE($7, pin),
+         updated_at = NOW()
      WHERE id=$1`,
-    [id, fio || null, phone, role, zones, isActive]
+    [id, fio || null, phone, role, zones, isActive, pin]
   );
 
-  await appendAudit(req, 'update', 'user', id, { fio, phone, role, zones, isActive });
+  await appendAudit(req, 'update', 'user', id, { fio, phone, role, zones, isActive, pin_changed: !!pin });
   res.redirect('/admin/users');
 });
 

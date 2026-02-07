@@ -52,12 +52,15 @@
       border-radius:16px; background: var(--card2);
       border:1px solid var(--border); backdrop-filter: blur(10px);
       overflow-x:visible;
+      align-items:center;
+      row-gap:8px;
     }
     .tab{
       flex:0 0 auto; display:inline-flex; align-items:center;
       padding:10px 12px; border-radius:999px;
       border:1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06);
       font-size:14px; white-space:nowrap;
+      min-height:40px;
     }
     .tab.active{ border-color: rgba(156,201,255,.55); box-shadow: 0 0 0 2px rgba(156,201,255,.14) inset; }
     .card{
@@ -80,6 +83,8 @@
       padding:10px 12px; border-radius:12px;
       border:1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.10);
       cursor:pointer; white-space:nowrap;
+      min-height:40px;
+      line-height:1.1;
     }
     .btn:hover{ background: rgba(255,255,255,.14); }
     .btn-primary{ background: rgba(156,201,255,.18); border-color: rgba(156,201,255,.40); }
@@ -130,9 +135,12 @@
     .gap-1{ gap:6px!important; }
     .gap-2{ gap:10px!important; }
 
+    .d-grid{ display:grid!important; }
+
     .mb-0{ margin-bottom:0!important; }
     .mb-2{ margin-bottom:10px!important; }
     .mb-3{ margin-bottom:14px!important; }
+    .mb-4{ margin-bottom:18px!important; }
 
     .m-0{ margin:0!important; }
     .p-0{ padding:0!important; }
@@ -160,7 +168,10 @@
     .btn-gold{ background: rgba(255,210,90,.18)!important; border-color: rgba(255,210,90,.40)!important; }
     .btn-gold:hover{ background: rgba(255,210,90,.24)!important; }
 
-    .btn-sm{ padding:8px 10px!important; border-radius:12px!important; font-size:13px!important; }
+    .btn-sm{ padding:8px 10px!important; border-radius:12px!important; font-size:13px!important; min-height:34px!important; }
+
+    /* Внутри flex-групп формы не должны создавать лишние отступы */
+    .d-flex form{ margin:0!important; }
 
     /* Card alias */
     .card-glass{ background: var(--card)!important; }
@@ -218,6 +229,7 @@
       .col-md-2{ flex: 0 0 calc(16.666% - 10px)!important; min-width: 160px; }
       .col-md-3{ flex: 0 0 calc(25% - 10px)!important; min-width: 200px; }
       .col-md-4{ flex: 0 0 calc(33.333% - 10px)!important; min-width: 240px; }
+      .col-md-6{ flex: 0 0 calc(50% - 10px)!important; min-width: 320px; }
     }
     .d-none{ display:none!important; }
 
@@ -241,8 +253,8 @@
     <% if (_user) { %>
       <nav class="nav" aria-label="Навигация">
         <a class="tab <%= _path === '/' ? 'active' : '' %>" href="/">Дашборд</a>
-        <a class="tab <%= _path.startsWith('/logs') ? 'active' : '' %>" href="/logs">Журнал транзита</a>
         <% if ((_user.role || '') === 'admin') { %>
+          <a class="tab <%= _path.startsWith('/logs') ? 'active' : '' %>" href="/logs">Журнал транзита</a>
           <a class="tab <%= _path.startsWith('/admin/users') ? 'active' : '' %>" href="/admin/users">Пользователи</a>
           <a class="tab <%= _path.startsWith('/admin/devices') ? 'active' : '' %>" href="/admin/devices">Устройства</a>
           <a class="tab <%= _path.startsWith('/admin/zones') ? 'active' : '' %>" href="/admin/zones">Зоны</a>

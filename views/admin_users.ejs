@@ -3,7 +3,7 @@
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
     <h1 class="h4 mb-0">Пользователи</h1>
-    <div class="text-muted small">PIN генерируется автоматически. Можно сбросить.</div>
+    <div class="text-muted small">PIN (пароль) генерируется автоматически. Админ может посмотреть и изменить.</div>
   </div>
   <div class="d-flex flex-wrap gap-2">
     <a class="btn btn-soft" href="/admin/devices">Устройства</a>
@@ -22,12 +22,15 @@
       <input name="phone" class="form-control" placeholder="Телефон (цифры)" required />
     </div>
     <div class="col-12 col-md-2">
+      <input name="pin" class="form-control" placeholder="PIN (4 цифры, опц.)" />
+    </div>
+    <div class="col-12 col-md-2">
       <select name="role" class="form-select">
         <option value="user">user</option>
         <option value="admin">admin</option>
       </select>
     </div>
-    <div class="col-12 col-md-3">
+    <div class="col-12 col-md-1">
       <button class="btn btn-gold w-100" type="submit">Создать</button>
     </div>
     <div class="col-12">
@@ -43,6 +46,7 @@
         <tr>
           <th>ФИО</th>
           <th>Телефон</th>
+          <th>PIN</th>
           <th>Роль</th>
           <th>Зоны</th>
           <th>Активен</th>
@@ -57,6 +61,26 @@
             </td>
             <td style="min-width:170px">
               <input form="upd-<%= u.id %>" name="phone" class="form-control form-control-sm" value="<%= (u.phone || '').replace(/\D/g,'') %>" />
+            </td>
+            <td style="min-width:190px">
+              <div class="d-flex gap-1 align-items-center flex-wrap">
+                <input
+                  id="pin-input-<%= u.id %>"
+                  form="upd-<%= u.id %>"
+                  name="pin"
+                  class="form-control form-control-sm"
+                  type="password"
+                  value="<%= (u.pin || '').replace(/\D/g,'') %>"
+                  placeholder="PIN"
+                  style="min-width:120px; flex:1 1 120px"
+                />
+                <button
+                  type="button"
+                  class="btn btn-soft btn-sm"
+                  data-toggle-pin="pin-input-<%= u.id %>"
+                  title="Показать/скрыть"
+                >👁</button>
+              </div>
             </td>
             <td style="min-width:110px">
               <select form="upd-<%= u.id %>" name="role" class="form-select form-select-sm">
@@ -92,24 +116,36 @@
                 >
               </div>
             </td>
-            <td class="text-end" style="min-width:230px">
-              <div class="d-flex gap-2 justify-content-end flex-wrap">
+            <td class="text-end" style="min-width:250px">
+              <div class="d-flex gap-2 justify-content-end flex-wrap align-items-center">
                 <button class="btn btn-soft btn-sm" type="submit" form="upd-<%= u.id %>">Сохранить</button>
-                <button class="btn btn-gold btn-sm" type="submit" form="pin-<%= u.id %>">Сброс PIN</button>
+                <button class="btn btn-gold btn-sm" type="submit" form="pinreset-<%= u.id %>">Сброс PIN</button>
               </div>
 
               <!-- Empty forms: inputs/buttons are linked via form="..." attribute -->
               <form id="upd-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/update"></form>
-              <form id="pin-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/reset_pin" class="m-0"></form>
+              <form id="pinreset-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/reset_pin" class="m-0"></form>
             </td>
           </tr>
         <% }) %>
         <% if (!users || !users.length) { %>
-          <tr><td colspan="6" class="text-muted p-3">Пользователей нет</td></tr>
+          <tr><td colspan="7" class="text-muted p-3">Пользователей нет</td></tr>
         <% } %>
       </tbody>
     </table>
   </div>
 </div>
+
+<script>
+  // Toggle PIN visibility for admin
+  document.querySelectorAll('[data-toggle-pin]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-toggle-pin');
+      const inp = document.getElementById(id);
+      if (!inp) return;
+      inp.type = (inp.type === 'password') ? 'text' : 'password';
+    });
+  });
+</script>
 
 <%- include('partials/footer') %>

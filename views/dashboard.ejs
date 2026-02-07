@@ -8,9 +8,9 @@
       <h1 style="margin:0 0 4px; font-size: 22px;">Дашборд</h1>
       <div class="muted">Управление доступом</div>
     </div>
-    <div class="right" style="display:flex; gap:8px; flex-wrap:wrap;">
-      <a class="btn" href="/logs">Журнал транзита</a>
+    <div class="right" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <% if (user && user.role === 'admin') { %>
+        <a class="btn" href="/logs">Журнал транзита</a>
         <a class="btn" href="/admin/users">Админка</a>
       <% } %>
     </div>
