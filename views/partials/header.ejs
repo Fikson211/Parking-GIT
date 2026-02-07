@@ -32,9 +32,9 @@
       --card2: rgba(255,255,255,.06);
       --border: rgba(255,255,255,.14);
 
-      /* text */
-      --text: rgba(255,255,255,.92);
-      --muted: rgba(255,255,255,.66);
+      /* text (brighter for readability in dark theme) */
+      --text: rgba(255,255,255,.97);
+      --muted: rgba(255,255,255,.80);
 
       /* accents */
       --accent: #9cc9ff;
@@ -120,6 +120,8 @@
     }
     html[data-theme="light"] .alert{ background: rgba(255,255,255,.92); border-color: rgba(15,23,42,.10); color: rgba(17,24,39,.88); }
     a{ color:inherit; text-decoration:none; }
+    /* Avoid UA default button text becoming too dark in dark theme */
+    button{ color: inherit; font: inherit; }
     .container{ max-width:1240px; margin:0 auto; padding:16px 16px 28px; }
     .topbar{
       display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -146,6 +148,7 @@
     }
     .tab{
       flex:0 0 auto; display:inline-flex; align-items:center;
+      color: var(--text);
       padding:10px 12px; border-radius:999px;
       border:1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06);
       font-size:14px; white-space:nowrap;
@@ -170,10 +173,11 @@
       border-color: var(--ring);
       box-shadow: 0 0 0 4px var(--ring-soft);
     }
-    input::placeholder{ color: rgba(255,255,255,.35); }
+    input::placeholder{ color: rgba(255,255,255,.50); }
     textarea{ min-height:84px; resize:vertical; }
     .btn{
       display:inline-flex; align-items:center; justify-content:center;
+      color: var(--text);
       padding:10px 12px; border-radius:12px;
       border:1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.10);
       cursor:pointer; white-space:nowrap;
@@ -203,7 +207,7 @@
       border-bottom:1px solid rgba(255,255,255,.10);
       vertical-align:top; font-size:13px; word-break:break-word;
     }
-    th{ text-align:left; color: rgba(255,255,255,.75); font-weight:700; }
+    th{ text-align:left; color: rgba(255,255,255,.86); font-weight:700; }
     tr:last-child td{ border-bottom:none; }
     .chips{ display:flex; flex-wrap:wrap; gap:6px; }
     .chip{
@@ -308,6 +312,7 @@
     .zone-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
     .zone-tile{
       text-align:left; width:100%;
+      color: var(--text);
       padding:12px; border-radius:16px;
       border:1px solid var(--border);
       background: var(--card2);
