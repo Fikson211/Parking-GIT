@@ -1,4 +1,4 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
+<%- include('partials/header', { title, bodyClass, user, path: '/admin/users' }) %>
 
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
@@ -50,7 +50,7 @@
         </tr>
       </thead>
       <tbody>
-        <% users.forEach(u => { %>
+        <% (users || []).forEach(u => { %>
           <tr>
             <td style="min-width:220px">
               <input form="upd-<%= u.id %>" name="fio" class="form-control form-control-sm" value="<%= u.fio || '' %>" />
@@ -60,15 +60,22 @@
             </td>
             <td style="min-width:110px">
               <select form="upd-<%= u.id %>" name="role" class="form-select form-select-sm">
-                <option value="user" <%= (u.role==='user'?'selected':'') %>>user</option>
-                <option value="admin" <%= (u.role==='admin'?'selected':'') %>>admin</option>
+                <option value="user" <%= (u.role === 'user') ? 'selected' : '' %>>user</option>
+                <option value="admin" <%= (u.role === 'admin') ? 'selected' : '' %>>admin</option>
               </select>
             </td>
             <td style="min-width:260px">
               <div class="d-flex flex-wrap gap-1">
-                <% zones.forEach(z => { %>
+                <% (zones || []).forEach(z => { %>
                   <label class="zone-chip">
-                    <input form="upd-<%= u.id %>" class="form-check-input me-1" type="checkbox" name="zones" value="<%= z.id %>" <%= (Array.isArray(u.zones) && u.zones.includes(z.id)) ? 'checked' : '' %> />
+                    <input
+                      form="upd-<%= u.id %>"
+                      class="form-check-input me-1"
+                      type="checkbox"
+                      name="zones"
+                      value="<%= z.id %>"
+                      <%= (Array.isArray(u.zones) && u.zones.includes(z.id)) ? 'checked' : '' %>
+                    />
                     <span><%= z.name %></span>
                   </label>
                 <% }) %>
@@ -76,7 +83,13 @@
             </td>
             <td style="min-width:90px">
               <div class="form-check form-switch">
-                <input form="upd-<%= u.id %>" class="form-check-input" type="checkbox" name="is_active" <%= u.is_active ? 'checked' : '' %>>
+                <input
+                  form="upd-<%= u.id %>"
+                  class="form-check-input"
+                  type="checkbox"
+                  name="is_active"
+                  <%= (u.is_active !== false) ? 'checked' : '' %>
+                >
               </div>
             </td>
             <td class="text-end" style="min-width:230px">
@@ -85,29 +98,15 @@
                 <button class="btn btn-gold btn-sm" type="submit" form="pin-<%= u.id %>">Сброс PIN</button>
               </div>
 
+              <!-- Empty forms: inputs/buttons are linked via form="..." attribute -->
               <form id="upd-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/update"></form>
               <form id="pin-<%= u.id %>" method="post" action="/admin/users/<%= u.id %>/reset_pin" class="m-0"></form>
             </td>
           </tr>
         <% }) %>
-                </div>
-              </td>
-              <td style="min-width:90px">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="is_active" <%= u.is_active ? 'checked' : '' %>>
-                </div>
-              </td>
-              <td class="text-end" style="min-width:230px">
-                <div class="d-flex gap-2 justify-content-end">
-                  <button class="btn btn-soft btn-sm" type="submit">Сохранить</button>
-                </form>
-                <form method="post" action="/admin/users/<%= u.id %>/reset_pin" class="m-0">
-                  <button class="btn btn-gold btn-sm" type="submit">Сброс PIN</button>
-                </form>
-                </div>
-              </td>
-          </tr>
-        <% }) %>
+        <% if (!users || !users.length) { %>
+          <tr><td colspan="6" class="text-muted p-3">Пользователей нет</td></tr>
+        <% } %>
       </tbody>
     </table>
   </div>

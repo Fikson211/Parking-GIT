@@ -2,7 +2,8 @@
   const _title = (typeof title !== 'undefined' && title) ? title : 'Parking GIT';
   const _bodyClass = (typeof bodyClass !== 'undefined' && bodyClass) ? bodyClass : '';
   const _user = (typeof user !== 'undefined') ? user : null;
-  const _path = (typeof path !== 'undefined') ? path : '';
+  // Some environments may accidentally expose a non-string "path". We only accept string paths.
+  const _path = (typeof path === 'string') ? path : '';
 %>
 <!doctype html>
 <html lang="ru">

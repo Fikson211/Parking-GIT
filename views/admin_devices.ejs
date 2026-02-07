@@ -1,4 +1,4 @@
-<%- include('partials/header', { title, bodyClass, user }) %>
+<%- include('partials/header', { title, bodyClass, user, path: '/admin/devices' }) %>
 
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
   <div>
@@ -27,21 +27,21 @@
       <label class="form-label small text-muted">Зона</label>
       <select class="form-select" name="zoneId">
         <option value="">—</option>
-        <% zones.forEach(z => { %>
+        <% (zones || []).forEach(z => { %>
           <option value="<%= z.id %>"><%= z.name %></option>
         <% }) %>
       </select>
     </div>
-    <div class="col-6 col-md-1">
+    <div class="col-12 col-md-2">
       <label class="form-label small text-muted">Метод</label>
       <select class="form-select" name="method">
         <option value="http">http</option>
         <option value="rodos">rodos</option>
       </select>
     </div>
-    <div class="col-6 col-md-1">
+    <div class="col-12">
       <label class="form-label small text-muted">URL/IP</label>
-      <input class="form-control" name="url" placeholder="http://..." />
+      <input class="form-control" name="url" placeholder="http://... или 192.168.1.10" />
     </div>
     <div class="col-12">
       <button class="btn btn-primary w-100 w-md-auto" type="submit">Сохранить</button>
@@ -51,7 +51,7 @@
 
 <div class="card card-glass p-0 overflow-hidden">
   <div class="table-responsive">
-    <table class="table table-modern align-middle mb-0">
+    <table class="table table-dark table-hover align-middle m-0">
       <thead>
         <tr>
           <th>ID</th>
@@ -59,54 +59,55 @@
           <th>Зона</th>
           <th>Метод</th>
           <th>URL/IP</th>
-          <th>Активен</th>
-          <th></th>
+          <th class="text-center">Активен</th>
+          <th class="text-end">Действия</th>
         </tr>
       </thead>
       <tbody>
-        <% devices.forEach(d => { %>
+        <% (devices || []).forEach(d => { %>
           <tr>
-            <td class="text-mono"><%= d.id %></td>
-            <td><input form="devupd-<%= d.id %>" class="form-control form-control-sm" name="name" value="<%= d.name || '' %>" /></td>
-            <td>
+            <td class="text-mono" style="min-width:180px"><%= d.id %></td>
+            <td style="min-width:220px">
+              <input form="devupd-<%= d.id %>" class="form-control form-control-sm" name="name" value="<%= d.name || '' %>" />
+            </td>
+            <td style="min-width:220px">
               <select form="devupd-<%= d.id %>" class="form-select form-select-sm" name="zoneId">
                 <option value="">—</option>
-                <% zones.forEach(z => { %>
-                  <option value="<%= z.id %>" <%= (d.zoneId===z.id)?'selected':'' %>><%= z.name %></option>
+                <% (zones || []).forEach(z => { %>
+                  <option value="<%= z.id %>" <%= (d.zoneId === z.id) ? 'selected' : '' %>><%= z.name %></option>
                 <% }) %>
               </select>
             </td>
-            <td>
+            <td style="min-width:120px">
               <select form="devupd-<%= d.id %>" class="form-select form-select-sm" name="method">
-                <option value="http" <%= d.method==='http'?'selected':'' %>>http</option>
-                <option value="rodos" <%= d.method==='rodos'?'selected':'' %>>rodos</option>
+                <option value="http" <%= (d.method === 'http') ? 'selected' : '' %>>http</option>
+                <option value="rodos" <%= (d.method === 'rodos') ? 'selected' : '' %>>rodos</option>
               </select>
             </td>
-            <td><input form="devupd-<%= d.id %>" class="form-control form-control-sm" name="url" value="<%= d.url || '' %>" /></td>
-            <td class="text-center">
-              <input form="devupd-<%= d.id %>" class="form-check-input" type="checkbox" name="is_active" <%= d.isActive ? 'checked' : '' %> />
+            <td style="min-width:260px">
+              <input form="devupd-<%= d.id %>" class="form-control form-control-sm" name="url" value="<%= d.url || '' %>" />
             </td>
-            <td class="text-end">
+            <td class="text-center" style="min-width:110px">
+              <input
+                form="devupd-<%= d.id %>"
+                class="form-check-input"
+                type="checkbox"
+                name="is_active"
+                <%= (d.is_active !== false) ? 'checked' : '' %>
+              />
+            </td>
+            <td class="text-end" style="min-width:150px">
               <button class="btn btn-soft btn-sm" type="submit" form="devupd-<%= d.id %>">Обновить</button>
               <form id="devupd-<%= d.id %>" method="post" action="/admin/devices/<%= d.id %>/update"></form>
             </td>
           </tr>
         <% }) %>
-                </select>
-              </td>
-              <td>
-                <select class="form-select form-select-sm" name="method">
-                  <option value="http" <%= d.method==='http'?'selected':'' %>>http</option>
-                  <option value="rodos" <%= d.method==='rodos'?'selected':'' %>>rodos</option>
-                </select>
-              </td>
-              <td><input class="form-control form-control-sm" name="url" value="<%= d.url || '' %>" /></td>
-              <td class="text-center"><input class="form-check-input" type="checkbox" name="is_active" <%= d.isActive ? 'checked' : '' %> /></td>
-              <td class="text-end"><button class="btn btn-soft btn-sm" type="submit">Обновить</button></td>
-            </form>
-          </tr>
-        <% }) %>
+        <% if (!devices || !devices.length) { %>
+          <tr><td colspan="7" class="text-muted p-3">Устройств нет</td></tr>
+        <% } %>
       </tbody>
     </table>
   </div>
 </div>
+
+<%- include('partials/footer') %>

@@ -1,8 +1,8 @@
 <% const pageTitle = (typeof title !== "undefined" && title) ? title : "Журнал транзита"; %>
-<%- include('partials/header', { title: pageTitle, bodyClass, user }) %>
+<%- include('partials/header', { title: pageTitle, bodyClass, user, path: '/logs' }) %>
 
 <%
-  // EJS helpers must be defined server-side (a <script> tag runs in the browser and can't be used in <%= %>).
+  // EJS helpers must be defined server-side (a <script> tag runs in the browser and can't be used in template output tags).
   const formatTs = (v) => {
     if (!v) return '';
     const d = (v instanceof Date) ? v : new Date(v);
@@ -28,8 +28,8 @@
       <label class="form-label">Точка</label>
       <select class="form-select" name="point">
         <option value="">Все</option>
-        <% (options?.points || []).forEach(p => { %>
-          <option value="<%= p %>" <%= filters?.point===p ? 'selected' : '' %>><%= p %></option>
+        <% ((options && options.points) ? options.points : []).forEach(p => { %>
+          <option value="<%= p %>" <%= (filters && filters.point === p) ? 'selected' : '' %>><%= p %></option>
         <% }) %>
       </select>
     </div>
@@ -37,18 +37,18 @@
       <label class="form-label">Событие</label>
       <select class="form-select" name="event">
         <option value="">Все</option>
-        <% (options?.events || []).forEach(ev => { %>
-          <option value="<%= ev %>" <%= filters?.event===ev ? 'selected' : '' %>><%= ev %></option>
+        <% ((options && options.events) ? options.events : []).forEach(ev => { %>
+          <option value="<%= ev %>" <%= (filters && filters.event === ev) ? 'selected' : '' %>><%= ev %></option>
         <% }) %>
       </select>
     </div>
     <div class="col-6 col-md-2">
       <label class="form-label">С</label>
-      <input class="form-control" type="date" name="date_from" value="<%= filters?.date_from || '' %>">
+      <input class="form-control" type="date" name="date_from" value="<%= (filters && filters.date_from) ? filters.date_from : '' %>">
     </div>
     <div class="col-6 col-md-2">
       <label class="form-label">По</label>
-      <input class="form-control" type="date" name="date_to" value="<%= filters?.date_to || '' %>">
+      <input class="form-control" type="date" name="date_to" value="<%= (filters && filters.date_to) ? filters.date_to : '' %>">
     </div>
     <div class="col-12 col-md-2">
       <button class="btn btn-primary w-100" type="submit">Фильтр</button>
