@@ -1,3 +1,33 @@
   </div>
+
+  <script>
+    (function(){
+      function getTheme(){
+        return document.documentElement.getAttribute('data-theme') || 'dark';
+      }
+      function setTheme(next){
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('theme', next); } catch (e) {}
+      }
+      function setIcon(btn, theme){
+        if (!btn) return;
+        btn.textContent = (theme === 'light') ? '🌞' : '🌙';
+        btn.title = (theme === 'light') ? 'Светлая тема' : 'Тёмная тема';
+        btn.setAttribute('aria-label', 'Переключить тему');
+      }
+
+      document.addEventListener('DOMContentLoaded', function(){
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        setIcon(btn, getTheme());
+        btn.addEventListener('click', function(){
+          var cur = getTheme();
+          var next = (cur === 'light') ? 'dark' : 'light';
+          setTheme(next);
+          setIcon(btn, next);
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
