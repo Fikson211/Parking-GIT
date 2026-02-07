@@ -114,7 +114,7 @@ function toMapById(rows) {
   return out;
 }
 
-async function appendTransitEvent({ point, event, source, result, session: sessionId, actor_id, actor_phone, actor_fio }) {
+async function appendTransitEvent({ point, event, source, result, session: sessionId, actor }) {
   const entry = {
     datetime: new Date().toISOString(),
     point: point ?? null,
@@ -122,14 +122,17 @@ async function appendTransitEvent({ point, event, source, result, session: sessi
     source: source ?? null,
     result: result ?? null,
     session: sessionId ?? null,
-    actor_id: actor_id ?? null,
-    actor_phone: actor_phone ?? null,
-    actor_fio: actor_fio ?? null,
+    actor_id: actor?.id ?? null,
+    actor_phone: actor?.phone ?? null,
+    actor_fio: actor?.fio ?? null,
   };
 
   try {
     await dbQuery(
-      `INSERT INTO public.transit_events(datetime, point, event, source, result, session, actor_id, actor_phone, actor_fio)
+      `INSERT INTO public.transit_events(
+          datetime, point, event, source, result, session,
+          actor_id, actor_phone, actor_fio
+       )
        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         entry.point,
@@ -541,9 +544,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
       source: user.phone || user.id,
       result: 'disabled',
       session: String(req.sessionID || ''),
-      actor_id: user.id,
-      actor_phone: user.phone,
-      actor_fio: user.fio,
+      actor: { id: user.id, phone: user.phone, fio: user.fio },
     });
     return res.status(409).json({ ok: false, error: 'Устройство отключено' });
   }
@@ -557,9 +558,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
       source: user.phone || user.id,
       result: 'denied',
       session: String(req.sessionID || ''),
-      actor_id: user.id,
-      actor_phone: user.phone,
-      actor_fio: user.fio,
+      actor: { id: user.id, phone: user.phone, fio: user.fio },
     });
     return res.status(403).json({ ok: false, error: 'Нет доступа' });
   }
@@ -574,9 +573,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
     source: user.phone || user.id,
     result: 'ok',
     session: String(req.sessionID || ''),
-      actor_id: user.id,
-      actor_phone: user.phone,
-      actor_fio: user.fio,
+    actor: { id: user.id, phone: user.phone, fio: user.fio },
   });
 
   await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId });
@@ -681,10 +678,19 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
     console.warn('⚠️ /logs.csv using fallback file because DB query failed:', e?.message || e);
   }
 
-  const lines = ['datetime,point,event,actor_fio,actor_phone,source,result,session'];
+  const lines = ['datetime,point,event,who,phone,source,result,session'];
   rows.forEach((l) => {
     const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-    lines.push([l.datetime, l.point, l.event, l.actor_fio, l.actor_phone, l.source, l.result, l.session].map(esc).join(','));
+    lines.push([
+      l.datetime,
+      l.point,
+      l.event,
+      l.actor_fio,
+      l.actor_phone,
+      l.source,
+      l.result,
+      l.session,
+    ].map(esc).join(','));
   });
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.send(lines.join('\n'));

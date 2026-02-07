@@ -93,10 +93,7 @@ async function ensureSchema() {
       event TEXT,
       source TEXT,
       result TEXT,
-      session TEXT,
-      actor_id TEXT,
-      actor_phone TEXT,
-      actor_fio TEXT
+      session TEXT
     );
   `);
 
@@ -249,12 +246,28 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS source TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS result TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS session TEXT;`);
+  // Кто сделал действие (для UI "Журнал транзита")
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_id TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_phone TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_fio TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ALTER COLUMN datetime SET DEFAULT NOW();`);
   await dbQuery(`UPDATE public.transit_events SET datetime = COALESCE(datetime, NOW()) WHERE datetime IS NULL;`);
   await dbQuery(`CREATE INDEX IF NOT EXISTS idx_transit_events_session ON public.transit_events (session);`);
+
+  // Подтянуть старые записи (если раньше писали только source)
+  await dbQuery(
+    `UPDATE public.transit_events
+     SET actor_phone = COALESCE(actor_phone, source)
+     WHERE actor_phone IS NULL AND source IS NOT NULL;`
+  );
+  await dbQuery(
+    `UPDATE public.transit_events te
+     SET actor_id = u.id,
+         actor_fio = u.fio
+     FROM public.users u
+     WHERE te.actor_fio IS NULL
+       AND regexp_replace(coalesce(u.phone,''), '[^0-9]', '', 'g') = regexp_replace(coalesce(te.actor_phone, te.source,''), '[^0-9]', '', 'g');`
+  );
 
   // audit
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS ts TIMESTAMPTZ;`);
