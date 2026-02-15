@@ -11,33 +11,6 @@ const axios = require('axios');
 
 const { dbQuery, ensureSchema } = require('./db');
 
-// ---- Remote Gateway (object-side) via Cloudflare Tunnel ----
-// Railway (cloud) cannot reach 192.168.x.x devices directly.
-// It must call an object-side gateway exposed through Cloudflare Tunnel + Access.
-const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || '').trim().replace(/\/$/, ''); // e.g. https://gateway.example.com
-const CF_ACCESS_CLIENT_ID = (process.env.CF_ACCESS_CLIENT_ID || '').trim();
-const CF_ACCESS_CLIENT_SECRET = (process.env.CF_ACCESS_CLIENT_SECRET || '').trim();
-const GATEWAY_KEY = (process.env.GATEWAY_KEY || '').trim(); // optional defense-in-depth
-
-async function gatewayOpen(deviceId) {
-  if (!GATEWAY_BASE_URL) {
-    throw new Error('GATEWAY_BASE_URL is not set');
-  }
-  const url = `${GATEWAY_BASE_URL}/api/open`;
-  const headers = {};
-  if (CF_ACCESS_CLIENT_ID) headers['CF-Access-Client-Id'] = CF_ACCESS_CLIENT_ID;
-  if (CF_ACCESS_CLIENT_SECRET) headers['CF-Access-Client-Secret'] = CF_ACCESS_CLIENT_SECRET;
-  if (GATEWAY_KEY) headers['X-Gateway-Key'] = GATEWAY_KEY;
-
-  const r = await axios.post(url, { deviceId }, {
-    headers,
-    timeout: 8000,
-    validateStatus: () => true, // we handle status ourselves
-  });
-
-  return r;
-}
-
 // Fallback file log (when DB is temporarily unavailable)
 const FALLBACK_TRANSIT_LOG = path.join(__dirname, 'data', 'transit_events.jsonl');
 
@@ -48,6 +21,12 @@ app.set('trust proxy', 1);
 // --- базовые настройки ---
 const PORT = Number(process.env.PORT || 8080);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-railway';
+
+// --- object gateway (local devices) ---
+// Пример: https://xxxx.trycloudflare.com   (БЕЗ слеша в конце)
+const GATEWAY_BASE_URL = String(process.env.GATEWAY_BASE_URL || '').replace(/\/+$/g, '');
+const GATEWAY_KEY = String(process.env.GATEWAY_KEY || '');
+const GATEWAY_TIMEOUT_MS = Number(process.env.GATEWAY_TIMEOUT_MS || 7000);
 
 app.disable('x-powered-by');
 app.use(express.urlencoded({ extended: true }));
@@ -140,6 +119,47 @@ function toMapById(rows) {
     out[r.id] = r;
   });
   return out;
+}
+
+async function gatewayOpen({ deviceId, action = 'open' }) {
+  if (!GATEWAY_BASE_URL || !GATEWAY_KEY) {
+    const err = new Error('GATEWAY_BASE_URL/GATEWAY_KEY not configured');
+    err.code = 'GATEWAY_NOT_CONFIGURED';
+    throw err;
+  }
+
+  // gateway expects: POST /api/open  { deviceId, action }
+  const url = `${GATEWAY_BASE_URL}/api/open`;
+  const started = Date.now();
+  try {
+    const r = await axios.post(
+      url,
+      { deviceId, action },
+      {
+        timeout: GATEWAY_TIMEOUT_MS,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Gateway-Key': GATEWAY_KEY,
+        },
+        // quick tunnels sometimes drop connections; retry a bit helps
+        validateStatus: () => true,
+      }
+    );
+
+    return {
+      ok: r.status >= 200 && r.status < 300 && r.data?.ok !== false,
+      http_status: r.status,
+      data: r.data,
+      elapsed_ms: Date.now() - started,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      http_status: 0,
+      error: e?.message || String(e),
+      elapsed_ms: Date.now() - started,
+    };
+  }
 }
 
 async function appendTransitEvent({ point, event, source, result, session: sessionId, actor }) {
@@ -591,56 +611,28 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
     return res.status(403).json({ ok: false, error: 'Нет доступа' });
   }
 
-  // Реальное открытие выполняем на объекте через Gateway (Cloudflare Tunnel).
-  // Railway не видит локальные IP (192.168.x.x), поэтому вызываем gateway.
-  let gatewayStatus = null;
-  let gatewayBody = null;
-  try {
-    const gr = await gatewayOpen(deviceId);
-    gatewayStatus = gr.status;
-    gatewayBody = gr.data;
-
-    const ok = (gatewayStatus >= 200 && gatewayStatus < 300) && (typeof gatewayBody === 'object' ? gatewayBody.ok !== false : true);
-    if (!ok) {
-      throw new Error(`Gateway error: status=${gatewayStatus}, body=${JSON.stringify(gatewayBody).slice(0, 300)}`);
-    }
-  } catch (e) {
-    // log failure
-    const zoneNameFail = zones[d.zoneId]?.name;
-    const pointFail = zoneNameFail ? `${d.name || deviceId} — ${zoneNameFail}` : (d.name || deviceId);
-
-    await appendTransitEvent({
-      point: pointFail,
-      event: 'open',
-      source: user.phone || user.id,
-      result: 'error',
-      session: String(req.sessionID || ''),
-      actor: { id: user.id, phone: user.phone, fio: user.fio },
-    });
-
-    await appendAudit(req, 'open_failed', 'device', deviceId, {
-      zoneId: d.zoneId,
-      gateway_status: gatewayStatus,
-      gateway_body: gatewayBody,
-      error: e?.message || String(e),
-    });
-
-    return res.status(502).json({ ok: false, error: 'Нет связи с объектом или шлюз недоступен' });
-  }
   const zoneName = zones[d.zoneId]?.name;
   const point = zoneName ? `${d.name || deviceId} — ${zoneName}` : (d.name || deviceId);
+
+  // Вызываем объектный шлюз (локальный ПК на объекте) через Cloudflare Tunnel.
+  // На шлюзе: POST /api/open {deviceId, action} + заголовок X-Gateway-Key.
+  const gw = await gatewayOpen({ deviceId, action: 'open' });
 
   await appendTransitEvent({
     point,
     event: 'open',
     source: user.phone || user.id,
-    result: 'ok',
+    result: gw.ok ? 'ok' : `gw_error:${gw.http_status || 0}`,
     session: String(req.sessionID || ''),
     actor: { id: user.id, phone: user.phone, fio: user.fio },
   });
 
-  await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId });
-  return res.json({ ok: true });
+  await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId, gw });
+
+  if (!gw.ok) {
+    return res.status(502).json({ ok: false, error: 'Шлюз недоступен/ошибка', ...gw });
+  }
+  return res.json({ ok: true, ...gw });
 });
 
 
