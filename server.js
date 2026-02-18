@@ -121,6 +121,76 @@ function toMapById(rows) {
   return out;
 }
 
+
+const MOSCOW_TZ = 'Europe/Moscow';
+
+// Форматирование времени строго в МСК, независимо от таймзоны сервера
+function formatMoscowDateTime(v) {
+  if (!v) return '';
+  const d = (v instanceof Date) ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+
+  try {
+    // "16.02.2026, 20:32:39" -> "16.02.2026 20:32:39"
+    return new Intl.DateTimeFormat('ru-RU', {
+      timeZone: MOSCOW_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).format(d).replace(',', '');
+  } catch {
+    // fallback: фиксированный UTC+3
+    const pad = (n) => String(n).padStart(2, '0');
+    const ms = d.getTime() + 3 * 60 * 60 * 1000;
+    const u = new Date(ms);
+    return `${pad(u.getUTCDate())}.${pad(u.getUTCMonth() + 1)}.${u.getUTCFullYear()} ${pad(u.getUTCHours())}:${pad(u.getUTCMinutes())}:${pad(u.getUTCSeconds())}`;
+  }
+}
+
+const RU_TRANSIT_EVENT = {
+  open: 'Открытие',
+  close: 'Закрытие',
+  unlock: 'Открытие',
+  lock: 'Закрытие',
+  error: 'Ошибка',
+};
+
+function ruTransitEvent(ev) {
+  const k = String(ev || '').trim();
+  return RU_TRANSIT_EVENT[k] || k;
+}
+
+const RU_AUDIT_ACTION = {
+  login: 'Вход',
+  open: 'Открытие устройства',
+  create: 'Создание',
+  update: 'Изменение',
+  reset_pin: 'Сброс PIN',
+  clear_transit_log: 'Очистка журнала транзита',
+};
+
+function ruAuditAction(a) {
+  const k = String(a || '').trim();
+  return RU_AUDIT_ACTION[k] || k;
+}
+
+const RU_TARGET_TYPE = {
+  user: 'Пользователь',
+  device: 'Устройство',
+  zone: 'Зона',
+  transit_events: 'Журнал транзита',
+};
+
+function ruTargetType(t) {
+  const k = String(t || '').trim();
+  return RU_TARGET_TYPE[k] || k;
+}
+
+
 async function gatewayOpen({ deviceId, action = 'open' }) {
   if (!GATEWAY_BASE_URL || !GATEWAY_KEY) {
     const err = new Error('GATEWAY_BASE_URL/GATEWAY_KEY not configured');
@@ -648,6 +718,8 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
 
 // --- logs ---
 // Журнал транзита доступен только администратору
+// --- logs ---
+// Журнал транзита доступен только администратору
 app.get('/logs', adminRequired, async (req, res) => {
   const user = req.session.user;
 
@@ -667,8 +739,8 @@ app.get('/logs', adminRequired, async (req, res) => {
 
   if (filters.point) push(`point = $X`, filters.point);
   if (filters.event) push(`event = $X`, filters.event);
-  if (filters.date_from) push(`datetime >= ($X::date)`, filters.date_from);
-  if (filters.date_to) push(`datetime < (($X::date) + interval '1 day')`, filters.date_to);
+  if (filters.date_from) push(`(datetime AT TIME ZONE 'Europe/Moscow') >= ($X::date)`, filters.date_from);
+  if (filters.date_to) push(`(datetime AT TIME ZONE 'Europe/Moscow') < (($X::date) + interval '1 day')`, filters.date_to);
 
   const whereSql = wh.length ? `WHERE ${wh.join(' AND ')}` : '';
 
@@ -678,7 +750,10 @@ app.get('/logs', adminRequired, async (req, res) => {
 
   try {
     const r = await dbQuery(
-      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone, actor_organization, actor_position, actor_organization, actor_position
+      `SELECT datetime,
+              to_char(datetime AT TIME ZONE 'Europe/Moscow', 'DD.MM.YYYY HH24:MI:SS') AS datetime_msk,
+              point, event, source, result, session,
+              actor_fio, actor_phone, actor_organization, actor_position
        FROM public.transit_events
        ${whereSql}
        ORDER BY datetime DESC
@@ -696,8 +771,8 @@ app.get('/logs', adminRequired, async (req, res) => {
     // Fallback to local file (useful when DB is restarting / temporary outage)
     const all = readFallbackTransitEvents(2000);
 
-    const from = filters.date_from ? new Date(filters.date_from + 'T00:00:00Z') : null;
-    const to = filters.date_to ? new Date(filters.date_to + 'T00:00:00Z') : null;
+    const from = filters.date_from ? new Date(filters.date_from + 'T00:00:00+03:00') : null; // МСК
+    const to = filters.date_to ? new Date(filters.date_to + 'T00:00:00+03:00') : null; // МСК
 
     const filtered = all.filter((x) => {
       if (filters.point && x.point !== filters.point) return false;
@@ -708,7 +783,7 @@ app.get('/logs', adminRequired, async (req, res) => {
       return true;
     });
 
-    logs = filtered.slice(0, 500);
+    logs = filtered.slice(0, 500).map((x) => ({ ...x, datetime_msk: formatMoscowDateTime(x.datetime) }));
 
     points = Array.from(new Set(all.map((x) => x.point).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
     events = Array.from(new Set(all.map((x) => x.event).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
@@ -732,7 +807,10 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
   let rows = [];
   try {
     const r = await dbQuery(
-      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone, actor_organization, actor_position
+      `SELECT datetime,
+              to_char(datetime AT TIME ZONE 'Europe/Moscow', 'DD.MM.YYYY HH24:MI:SS') AS datetime_msk,
+              point, event, source, result, session,
+              actor_fio, actor_phone, actor_organization, actor_position
        FROM public.transit_events
        ORDER BY datetime DESC
        LIMIT 500`
@@ -743,25 +821,39 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
     console.warn('⚠️ /logs.csv using fallback file because DB query failed:', e?.message || e);
   }
 
-  const lines = ['datetime,point,event,who,phone,organization,position,source,result,session'];
+    const SEP = ';';
+  const header = ['Дата/время (МСК)','Точка','Событие','ФИО','Телефон','Организация','Должность','Источник','Результат','Сессия'];
+  const lines = [header.join(SEP)];
   rows.forEach((l) => {
-    const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const esc = (v) => {
+      const s = String(v ?? '');
+      const escaped = s.replace(/"/g, '""');
+      return /[";\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+    };
+
+    const dtMsk = l.datetime_msk || formatMoscowDateTime(l.datetime);
+    const evRu = ruTransitEvent(l.event);
     lines.push([
-      l.datetime,
+      dtMsk,
       l.point,
-      l.event,
-      l.actor_fio,
+      evRu,
+      (l.actor_fio || '').trim(),
       l.actor_phone,
       l.actor_organization,
       l.actor_position,
       l.source,
       l.result,
       l.session,
-    ].map(esc).join(','));
+    ].map(esc).join(SEP));
   });
+
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.send(lines.join('\n'));
+  res.setHeader('Content-Disposition', 'attachment; filename="transit_log.csv"');
+  // BOM для корректного открытия в Excel
+  res.send('\ufeff' + lines.join('\n'));
 });
+
+
 
 
 app.post('/logs/clear', adminRequired, async (req, res) => {
@@ -939,7 +1031,9 @@ app.post('/admin/zones/create', adminRequired, async (req, res) => {
 
 app.get('/admin/audit', adminRequired, async (req, res) => {
   const r = await dbQuery(
-    `SELECT ts, actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua
+    `SELECT ts,
+            to_char(ts AT TIME ZONE 'Europe/Moscow', 'DD.MM.YYYY HH24:MI:SS') AS ts_msk,
+            actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua
      FROM public.audit
      ORDER BY ts DESC
      LIMIT 500`
@@ -947,6 +1041,7 @@ app.get('/admin/audit', adminRequired, async (req, res) => {
 
   const entries = r.rows.map((e) => ({
     ts: e.ts,
+    tsMsk: e.ts_msk || formatMoscowDateTime(e.ts),
     actorId: e.actor_id,
     actorPhone: e.actor_phone,
     actorFio: e.actor_fio,
@@ -980,40 +1075,50 @@ app.get('/admin/audit', adminRequired, async (req, res) => {
 // Export audit as CSV
 app.get('/admin/audit.csv', adminRequired, async (req, res) => {
   const r = await dbQuery(
-    `SELECT ts, actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua
+    `SELECT ts,
+            to_char(ts AT TIME ZONE 'Europe/Moscow', 'DD.MM.YYYY HH24:MI:SS') AS ts_msk,
+            actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua
      FROM public.audit
      ORDER BY ts DESC
      LIMIT 5000`
   );
 
-  const rows = r.rows.map((e) => [
-    e.ts,
-    e.actor_id,
-    e.actor_phone,
-    e.actor_fio,
-    e.actor_organization,
-    e.actor_position,
-    e.action,
-    e.target_type,
-    e.target_id,
-    typeof e.details === 'string' ? e.details : JSON.stringify(e.details || null),
-    e.ip,
-    e.ua,
-  ]);
+  const SEP = ';';
+  const header = ['Время (МСК)','ID','Телефон','ФИО','Организация','Должность','Действие','Тип цели','ID цели','Детали','IP','User-Agent'];
+  const lines = [header.join(SEP)];
 
-  const header = ['ts', 'actor_id', 'actor_phone', 'actor_fio', 'actor_organization', 'actor_position', 'action', 'target_type', 'target_id', 'details', 'ip', 'ua'];
-  const csv = [header, ...rows]
-    .map((r) => r.map((v) => {
-      const s = v == null ? '' : String(v);
+  r.rows.forEach((e) => {
+    const esc = (v) => {
+      const s = String(v ?? '');
       const escaped = s.replace(/"/g, '""');
-      return /[",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
-    }).join(','))
-    .join('\n');
+      return /[";\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+    };
+
+    const detailsStr = (typeof e.details === 'string')
+      ? e.details
+      : JSON.stringify(e.details || null);
+
+    lines.push([
+      e.ts_msk || formatMoscowDateTime(e.ts),
+      e.actor_id,
+      e.actor_phone,
+      e.actor_fio,
+      e.actor_organization,
+      e.actor_position,
+      ruAuditAction(e.action),
+      ruTargetType(e.target_type),
+      e.target_id,
+      detailsStr,
+      e.ip,
+      e.ua,
+    ].map(esc).join(SEP));
+  });
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="audit.csv"');
-  res.send(csv);
+  res.setHeader('Content-Disposition', 'attachment; filename="audit_log.csv"');
+  res.send('\ufeff' + lines.join('\n'));
 });
+
 
 // Clear audit log
 app.post('/admin/audit/clear', adminRequired, async (req, res) => {

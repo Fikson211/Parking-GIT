@@ -2,13 +2,38 @@
 <%- include('partials/header', { title: pageTitle, bodyClass, user, path: '/logs' }) %>
 
 <%
-  // EJS helpers must be defined server-side (a <script> tag runs in the browser and can't be used in template output tags).
+  // Локальные подписи для журнала (выводим по-русски, но фильтруем по исходным значениям)
+  const EVENT_LABELS = {
+    open: 'Открытие',
+    close: 'Закрытие',
+    unlock: 'Открытие',
+    lock: 'Закрытие',
+    error: 'Ошибка',
+  };
+  const eventLabel = (ev) => {
+    const k = String(ev || '').trim();
+    return EVENT_LABELS[k] || k;
+  };
+
+  // Фолбэк: форматируем время в МСК (если сервер не прислал готовую строку)
   const formatTs = (v) => {
     if (!v) return '';
     const d = (v instanceof Date) ? v : new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    try {
+      return new Intl.DateTimeFormat('ru-RU', {
+        timeZone: 'Europe/Moscow',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+      }).format(d).replace(',', '');
+    } catch (e) {
+      return String(v);
+    }
   };
 %>
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
@@ -38,7 +63,7 @@
       <select class="form-select" name="event">
         <option value="">Все</option>
         <% ((options && options.events) ? options.events : []).forEach(ev => { %>
-          <option value="<%= ev %>" <%= (filters && filters.event === ev) ? 'selected' : '' %>><%= ev %></option>
+          <option value="<%= ev %>" <%= (filters && filters.event === ev) ? 'selected' : '' %>><%= eventLabel(ev) %></option>
         <% }) %>
       </select>
     </div>
@@ -75,9 +100,9 @@
       <tbody>
         <% (logs || []).forEach(e => { %>
           <tr>
-            <td class="text-nowrap"><%= formatTs(e.datetime || e.ts || e.time) %></td>
+            <td class="text-nowrap"><%= e.datetime_msk || formatTs(e.datetime || e.ts || e.time) %></td>
             <td><span class="badge badge-soft"><%= e.point || '' %></span></td>
-            <td><%= e.event || '' %></td>
+            <td><%= eventLabel(e.event || '') %></td>
             <td><%= (e.actor_fio || '').trim() || (e.source || '') %></td>
             <td class="d-none d-lg-table-cell"><%= [e.actor_organization, e.actor_position].filter(Boolean).join(' / ') %></td>
             <td class="d-none d-xl-table-cell"><%= e.actor_phone || '' %></td>
@@ -94,17 +119,5 @@
   </div>
 </div>
 
-<script>
-  function formatTs(v){
-    if(!v) return '';
-    try{
-      const d = new Date(v);
-      if(String(d) === 'Invalid Date') return String(v);
-      return d.toISOString().replace('T',' ').replace('Z','');
-    }catch(e){
-      return String(v);
-    }
-  }
-</script>
 
 <%- include('partials/footer') %>
