@@ -36,6 +36,7 @@
           <td class="small text-muted"><%= fmt %></td>
           <td>
             <div class="fw-semibold"><%= e.actorFio || '—' %></div>
+            <div class="small text-muted"><%= [e.actorOrganization, e.actorPosition].filter(Boolean).join(' • ') %></div>
             <div class="small text-muted"><%= e.actorPhone || '' %></div>
           </td>
           <td><span class="badge badge-soft"><%= e.action %></span></td>

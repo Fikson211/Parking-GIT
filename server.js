@@ -173,15 +173,17 @@ async function appendTransitEvent({ point, event, source, result, session: sessi
     actor_id: actor?.id ?? null,
     actor_phone: actor?.phone ?? null,
     actor_fio: actor?.fio ?? null,
+    actor_organization: actor?.organization ?? null,
+    actor_position: actor?.position ?? null,
   };
 
   try {
     await dbQuery(
       `INSERT INTO public.transit_events(
           datetime, point, event, source, result, session,
-          actor_id, actor_phone, actor_fio
+          actor_id, actor_phone, actor_fio, actor_organization, actor_position
        )
-       VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)`,
+       VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         entry.point,
         entry.event,
@@ -191,6 +193,8 @@ async function appendTransitEvent({ point, event, source, result, session: sessi
         entry.actor_id || null,
         entry.actor_phone || null,
         entry.actor_fio || null,
+        entry.actor_organization || null,
+        entry.actor_position || null,
       ]
     );
     return;
@@ -235,12 +239,14 @@ async function appendAudit(req, action, targetType, targetId, details) {
   try {
     const actor = req.session?.user || null;
     await dbQuery(
-      `INSERT INTO public.audit(ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua)
-       VALUES (NOW(), $1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      `INSERT INTO public.audit(ts, actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua)
+       VALUES (NOW(), $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         actor?.id || null,
         actor?.phone || null,
         actor?.fio || null,
+        actor?.organization || null,
+        actor?.position || null,
         action,
         targetType,
         targetId,
@@ -257,7 +263,7 @@ async function appendAudit(req, action, targetType, targetId, details) {
 async function loadAll() {
   // Важно: никаких ORDER BY sort если колонки нет — ensureSchema её добавит.
   const [users, zones, devices] = await Promise.all([
-    dbQuery(`SELECT id,fio,phone,pin,role,zones,is_active FROM public.users ORDER BY created_at ASC`),
+    dbQuery(`SELECT id,fio,phone,organization,position,pin,role,zones,is_active FROM public.users ORDER BY created_at ASC`),
     dbQuery(`SELECT id,name,sort FROM public.zones ORDER BY sort ASC, name ASC`),
     dbQuery(`SELECT id,name,zone_id,type,method,url,ip,relay,enabled,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
   ]);
@@ -267,6 +273,8 @@ async function loadAll() {
       id: u.id,
       fio: u.fio,
       phone: u.phone,
+      organization: u.organization,
+      position: u.position,
       pin: u.pin,
       role: u.role || 'user',
       zones: Array.isArray(u.zones) ? u.zones : [],
@@ -500,7 +508,7 @@ app.post('/login', async (req, res) => {
 
   try {
     const r = await dbQuery(
-      `SELECT id,fio,phone,pin,role,zones,is_active
+      `SELECT id,fio,phone,organization,position,pin,role,zones,is_active
        FROM public.users
        WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1
        LIMIT 1`,
@@ -521,6 +529,8 @@ app.post('/login', async (req, res) => {
       id: u.id,
       fio: u.fio,
       phone: u.phone,
+      organization: u.organization,
+      position: u.position,
       role: u.role || 'user',
       zones: Array.isArray(u.zones) ? u.zones : [],
     };
@@ -592,7 +602,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
       source: user.phone || user.id,
       result: 'disabled',
       session: String(req.sessionID || ''),
-      actor: { id: user.id, phone: user.phone, fio: user.fio },
+      actor: { id: user.id, phone: user.phone, fio: user.fio, organization: user.organization, position: user.position },
     });
     return res.status(409).json({ ok: false, error: 'Устройство отключено' });
   }
@@ -606,7 +616,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
       source: user.phone || user.id,
       result: 'denied',
       session: String(req.sessionID || ''),
-      actor: { id: user.id, phone: user.phone, fio: user.fio },
+      actor: { id: user.id, phone: user.phone, fio: user.fio, organization: user.organization, position: user.position },
     });
     return res.status(403).json({ ok: false, error: 'Нет доступа' });
   }
@@ -624,7 +634,7 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
     source: user.phone || user.id,
     result: gw.ok ? 'ok' : `gw_error:${gw.http_status || 0}`,
     session: String(req.sessionID || ''),
-    actor: { id: user.id, phone: user.phone, fio: user.fio },
+    actor: { id: user.id, phone: user.phone, fio: user.fio, organization: user.organization, position: user.position },
   });
 
   await appendAudit(req, 'open', 'device', deviceId, { zoneId: d.zoneId, gw });
@@ -668,7 +678,7 @@ app.get('/logs', adminRequired, async (req, res) => {
 
   try {
     const r = await dbQuery(
-      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone
+      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone, actor_organization, actor_position, actor_organization, actor_position
        FROM public.transit_events
        ${whereSql}
        ORDER BY datetime DESC
@@ -722,7 +732,7 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
   let rows = [];
   try {
     const r = await dbQuery(
-      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone
+      `SELECT datetime, point, event, source, result, session, actor_fio, actor_phone, actor_organization, actor_position
        FROM public.transit_events
        ORDER BY datetime DESC
        LIMIT 500`
@@ -733,7 +743,7 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
     console.warn('⚠️ /logs.csv using fallback file because DB query failed:', e?.message || e);
   }
 
-  const lines = ['datetime,point,event,who,phone,source,result,session'];
+  const lines = ['datetime,point,event,who,phone,organization,position,source,result,session'];
   rows.forEach((l) => {
     const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     lines.push([
@@ -742,6 +752,8 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
       l.event,
       l.actor_fio,
       l.actor_phone,
+      l.actor_organization,
+      l.actor_position,
       l.source,
       l.result,
       l.session,
@@ -785,6 +797,8 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const id = crypto.randomUUID();
   const fio = String(req.body.fio || '').trim();
   const phone = digitsOnly(req.body.phone);
+  const organization = String(req.body.organization || '').trim();
+  const position = String(req.body.position || '').trim();
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const zones = parseZonesInput(req.body.zones);
 
@@ -793,12 +807,12 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : genPin(4);
 
   await dbQuery(
-    `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,true)`,
-    [id, fio || null, phone, pin, role, zones]
+    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,zones,is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true)`,
+    [id, fio || null, phone, organization || null, position || null, pin, role, zones]
   );
 
-  await appendAudit(req, 'create', 'user', id, { fio, phone, role, zones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
+  await appendAudit(req, 'create', 'user', id, { fio, phone, organization, position, role, zones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
   res.redirect('/admin/users');
 });
 
@@ -806,6 +820,8 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
   const id = String(req.params.id);
   const fio = String(req.body.fio || '').trim();
   const phone = digitsOnly(req.body.phone);
+  const organization = String(req.body.organization || '').trim();
+  const position = String(req.body.position || '').trim();
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
   const zones = parseZonesInput(req.body.zones);
@@ -814,14 +830,14 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
 
   await dbQuery(
     `UPDATE public.users
-     SET fio=$2, phone=$3, role=$4, zones=$5, is_active=$6,
-         pin = COALESCE($7, pin),
+     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6, zones=$7, is_active=$8,
+         pin = COALESCE($9, pin),
          updated_at = NOW()
      WHERE id=$1`,
-    [id, fio || null, phone, role, zones, isActive, pin]
+    [id, fio || null, phone, organization || null, position || null, role, zones, isActive, pin]
   );
 
-  await appendAudit(req, 'update', 'user', id, { fio, phone, role, zones, isActive, pin_changed: !!pin });
+  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, zones, isActive, pin_changed: !!pin });
   res.redirect('/admin/users');
 });
 
@@ -923,7 +939,7 @@ app.post('/admin/zones/create', adminRequired, async (req, res) => {
 
 app.get('/admin/audit', adminRequired, async (req, res) => {
   const r = await dbQuery(
-    `SELECT ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua
+    `SELECT ts, actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua
      FROM public.audit
      ORDER BY ts DESC
      LIMIT 500`
@@ -934,6 +950,8 @@ app.get('/admin/audit', adminRequired, async (req, res) => {
     actorId: e.actor_id,
     actorPhone: e.actor_phone,
     actorFio: e.actor_fio,
+    actorOrganization: e.actor_organization,
+    actorPosition: e.actor_position,
     action: e.action,
     targetType: e.target_type,
     targetId: e.target_id,
@@ -962,7 +980,7 @@ app.get('/admin/audit', adminRequired, async (req, res) => {
 // Export audit as CSV
 app.get('/admin/audit.csv', adminRequired, async (req, res) => {
   const r = await dbQuery(
-    `SELECT ts, actor_id, actor_phone, actor_fio, action, target_type, target_id, details, ip, ua
+    `SELECT ts, actor_id, actor_phone, actor_fio, actor_organization, actor_position, action, target_type, target_id, details, ip, ua
      FROM public.audit
      ORDER BY ts DESC
      LIMIT 5000`
@@ -973,6 +991,8 @@ app.get('/admin/audit.csv', adminRequired, async (req, res) => {
     e.actor_id,
     e.actor_phone,
     e.actor_fio,
+    e.actor_organization,
+    e.actor_position,
     e.action,
     e.target_type,
     e.target_id,
@@ -981,7 +1001,7 @@ app.get('/admin/audit.csv', adminRequired, async (req, res) => {
     e.ua,
   ]);
 
-  const header = ['ts', 'actor_id', 'actor_phone', 'actor_fio', 'action', 'target_type', 'target_id', 'details', 'ip', 'ua'];
+  const header = ['ts', 'actor_id', 'actor_phone', 'actor_fio', 'actor_organization', 'actor_position', 'action', 'target_type', 'target_id', 'details', 'ip', 'ua'];
   const csv = [header, ...rows]
     .map((r) => r.map((v) => {
       const s = v == null ? '' : String(v);
@@ -1017,10 +1037,10 @@ async function ensureDefaultAdmin() {
   const fio = process.env.ADMIN_FIO || 'Администратор';
   // если зон ещё нет — оставляем пусто, можно назначить в админке
   await dbQuery(
-    `INSERT INTO public.users(id,fio,phone,pin,role,zones,is_active)
-     VALUES ($1,$2,$3,$4,'admin',$5,true)
+    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,zones,is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,'admin',$7,true)
      ON CONFLICT (id) DO NOTHING`,
-    [id, fio, adminPhone, adminPin, []]
+    [id, fio, adminPhone, null, null, adminPin, []]
   );
 
   console.log('✅ Создан админ по умолчанию:', adminPhone, 'PIN:', adminPin);

@@ -26,7 +26,9 @@ async function ensureSchema() {
       phone TEXT,
       pin TEXT,
       role TEXT DEFAULT 'user',
-      zones TEXT[] NOT NULL DEFAULT '{}'::text[],
+            organization TEXT,
+      position TEXT,
+zones TEXT[] NOT NULL DEFAULT '{}'::text[],
       is_active BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -125,6 +127,8 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS pin TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT;`);
+  await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS organization TEXT;`);
+  await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS position TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS zones TEXT[];`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_active BOOLEAN;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;`);
@@ -225,6 +229,8 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS user_id TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS user_phone TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS user_fio TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS user_organization TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS user_position TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS device_id TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS device_name TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_logs ADD COLUMN IF NOT EXISTS zone_id TEXT;`);
@@ -250,6 +256,8 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_id TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_phone TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_fio TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_organization TEXT;`);
+  await dbQuery(`ALTER TABLE public.transit_events ADD COLUMN IF NOT EXISTS actor_position TEXT;`);
   await dbQuery(`ALTER TABLE public.transit_events ALTER COLUMN datetime SET DEFAULT NOW();`);
   await dbQuery(`UPDATE public.transit_events SET datetime = COALESCE(datetime, NOW()) WHERE datetime IS NULL;`);
   await dbQuery(`CREATE INDEX IF NOT EXISTS idx_transit_events_session ON public.transit_events (session);`);
@@ -263,10 +271,11 @@ async function ensureSchema() {
   await dbQuery(
     `UPDATE public.transit_events te
      SET actor_id = u.id,
-         actor_fio = u.fio
+         actor_fio = COALESCE(te.actor_fio, u.fio),
+         actor_organization = COALESCE(te.actor_organization, u.organization),
+         actor_position = COALESCE(te.actor_position, u.position)
      FROM public.users u
-     WHERE te.actor_fio IS NULL
-       AND regexp_replace(coalesce(u.phone,''), '[^0-9]', '', 'g') = regexp_replace(coalesce(te.actor_phone, te.source,''), '[^0-9]', '', 'g');`
+     WHERE regexp_replace(coalesce(u.phone,''), '[^0-9]', '', 'g') = regexp_replace(coalesce(te.actor_phone, te.source,''), '[^0-9]', '', 'g');`
   );
 
   // audit
@@ -274,6 +283,8 @@ async function ensureSchema() {
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS actor_id TEXT;`);
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS actor_phone TEXT;`);
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS actor_fio TEXT;`);
+  await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS actor_organization TEXT;`);
+  await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS actor_position TEXT;`);
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS action TEXT;`);
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS target_type TEXT;`);
   await dbQuery(`ALTER TABLE public.audit ADD COLUMN IF NOT EXISTS target_id TEXT;`);

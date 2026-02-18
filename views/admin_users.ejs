@@ -17,22 +17,28 @@
 <div class="card card-glass p-3 mb-3">
   <h2 class="h6 mb-2">Добавить пользователя</h2>
   <form method="post" action="/admin/users/create" class="row g-2">
-    <div class="col-12 col-md-4">
+    <div class="col-12 col-md-3">
       <input name="fio" class="form-control" placeholder="ФИО" required />
     </div>
     <div class="col-12 col-md-3">
+      <input name="organization" class="form-control" placeholder="Организация (опц.)" />
+    </div>
+    <div class="col-12 col-md-2">
+      <input name="position" class="form-control" placeholder="Должность (опц.)" />
+    </div>
+    <div class="col-12 col-md-2">
       <input name="phone" class="form-control" placeholder="Телефон (цифры)" required />
     </div>
-    <div class="col-12 col-md-2">
-      <input name="pin" class="form-control" placeholder="PIN (4 цифры, опц.)" />
+    <div class="col-12 col-md-1">
+      <input name="pin" class="form-control" placeholder="PIN" />
     </div>
-    <div class="col-12 col-md-2">
+    <div class="col-12 col-md-1">
       <select name="role" class="form-select">
         <option value="user">user</option>
         <option value="admin">admin</option>
       </select>
     </div>
-    <div class="col-12 col-md-1">
+    <div class="col-12">
       <button class="btn btn-gold w-100" type="submit">Создать</button>
     </div>
     <div class="col-12">
@@ -44,7 +50,7 @@
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
   <div class="text-muted small">Всего: <%= (users || []).length %></div>
   <div style="flex: 1 1 280px; max-width: 380px;">
-    <input id="userSearch" class="form-control" placeholder="Поиск: ФИО / телефон" />
+    <input id="userSearch" class="form-control" placeholder="Поиск: ФИО / должность / организация / телефон" />
   </div>
 </div>
 
@@ -55,6 +61,9 @@
         <div style="min-width:220px; flex:1 1 220px;">
           <div class="user-name"><%= u.fio || '—' %></div>
           <div class="user-sub text-mono"><%= (u.phone || '').replace(/\D/g,'') %></div>
+          <div class="text-muted small" style="line-height:1.2;">
+            <%= [u.organization, u.position].filter(Boolean).join(' • ') || '' %>
+          </div>
         </div>
         <div class="d-flex gap-1 flex-wrap align-items-center" style="justify-content:flex-end;">
           <span class="badge-soft"><%= (u.role === 'admin') ? 'admin' : 'user' %></span>
@@ -98,6 +107,16 @@
           <div>
             <label class="form-label">Телефон</label>
             <input name="phone" class="form-control" id="mPhone" required />
+          </div>
+
+          <div>
+            <label class="form-label">Организация</label>
+            <input name="organization" class="form-control" id="mOrg" placeholder="(опционально)" />
+          </div>
+
+          <div>
+            <label class="form-label">Должность</label>
+            <input name="position" class="form-control" id="mPos" placeholder="(опционально)" />
           </div>
 
           <div>
@@ -165,6 +184,8 @@
 
   const fio = document.getElementById('mFio');
   const phone = document.getElementById('mPhone');
+  const org = document.getElementById('mOrg');
+  const pos = document.getElementById('mPos');
   const role = document.getElementById('mRole');
   const active = document.getElementById('mActive');
 
@@ -194,6 +215,8 @@
     // fields
     fio.value = u.fio || '';
     phone.value = digitsOnly(u.phone || '');
+    org.value = u.organization || '';
+    pos.value = u.position || '';
     role.value = (u.role === 'admin') ? 'admin' : 'user';
     active.checked = (u.is_active !== false);
 
@@ -252,7 +275,7 @@
     document.querySelectorAll('#usersGrid [data-user-id]').forEach(card => {
       const id = card.getAttribute('data-user-id');
       const u = USERS.find(x => String(x.id) === String(id));
-      const hay = ((u?.fio || '') + ' ' + digitsOnly(u?.phone || '') + ' ' + String(u?.id || '')).toLowerCase();
+      const hay = ((u?.fio || '') + ' ' + (u?.position || '') + ' ' + (u?.organization || '') + ' ' + digitsOnly(u?.phone || '') + ' ' + String(u?.id || '')).toLowerCase();
       card.style.display = (!q || hay.includes(q)) ? '' : 'none';
     });
   });
