@@ -7,10 +7,8 @@
       <div class="text-muted small">Минималистичный список + карточка редактирования. PIN можно посмотреть и поменять.</div>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center page-actions">
-      <% if (user && user.is_is_admin) { %>
       <a class="btn btn-soft" href="/admin/devices">Устройства</a>
       <a class="btn btn-soft" href="/admin/zones">Зоны</a>
-      <% } %>
       <a class="btn btn-soft" href="/admin/audit">Аудит</a>
     </div>
   </div>
@@ -36,13 +34,21 @@
     </div>
     <div class="col-12 col-md-1">
       <select name="role" class="form-select">
-        <option value="user">Пользователь</option>
-        <option value="admin">Админ</option>
-        <% if (user && user.is_is_admin) { %>
-          <option value="is_admin">ИС админ</option>
-        <% } %>
+        <option value="user">user</option>
+        <option value="admin">admin</option>
       </select>
     </div>
+
+    <% if (user && user.is_is_admin) { %>
+    <div class="col-12 col-md-2">
+      <div class="form-check mt-4">
+        <input class="form-check-input" type="checkbox" id="cIsISAdmin" name="is_is_admin">
+        <label class="form-check-label" for="cIsISAdmin">ИС админ</label>
+      </div>
+      <div class="small text-muted">Даст доступ к «Устройствам» и «Зонам»</div>
+    </div>
+    <% } %>
+
     <div class="col-12">
       <button class="btn btn-gold w-100" type="submit">Создать</button>
     </div>
@@ -71,7 +77,7 @@
           </div>
         </div>
         <div class="d-flex gap-1 flex-wrap align-items-center" style="justify-content:flex-end;">
-          <span class="badge-soft"><%= (u.role === 'admin' && u.is_is_admin) ? 'ИС админ' : ((u.role === 'admin') ? 'админ' : 'пользователь') %></span>
+          <span class="badge-soft"><%= (u.role === 'admin') ? 'admin' : 'user' %></span>
           <span class="badge-soft"><%= (u.is_active !== false) ? 'active' : 'off' %></span>
           <span class="badge-soft"><%= Array.isArray(u.zones) ? u.zones.length : 0 %> зон</span>
         </div>
@@ -127,16 +133,24 @@
           <div>
             <label class="form-label">Роль</label>
             <select name="role" class="form-select" id="mRole">
-              <option value="user">Пользователь</option>
-              <option value="admin">Админ</option>
-              <% if (user && user.is_is_admin) { %>
-                <option value="is_admin">ИС админ</option>
-              <% } %>
+              <option value="user">user</option>
+              <option value="admin">admin</option>
             </select>
           </div>
 
+          <% if (user && user.is_is_admin) { %>
           <div>
-            <label class="form-label">Активен</label>
+            <label class="form-label">ИС админ</label>
+            <div class="form-check form-switch" style="align-items:center;">
+              <input class="form-check-input" type="checkbox" id="mIsISAdmin" name="is_is_admin">
+              <span class="text-muted small">доступ к «Устройствам» и «Зонам»</span>
+            </div>
+          </div>
+          <% } %>
+
+
+          <div>
+            <label class=\"form-label\">Активен</label>
             <div class="form-check form-switch" style="align-items:center;">
               <input class="form-check-input" type="checkbox" id="mActive" name="is_active">
               <span class="text-muted small">вкл/выкл</span>
@@ -155,7 +169,8 @@
             </div>
           </div>
 
-          <div style="grid-column: 1 / -1;">
+          <% if (user && user.is_is_admin) { %>
+<div style="grid-column: 1 / -1;">
             <label class="form-label">Зоны доступа</label>
             <div class="d-flex flex-wrap gap-1" id="mZones">
               <% (zones || []).forEach(z => { %>
@@ -165,7 +180,10 @@
                 </label>
               <% }) %>
             </div>
-          </div>
+          <% } else { %>
+<div style=\"grid-column: 1 / -1;\" class=\"text-muted small\">Зоны доступа назначает ИС админ.</div>
+<% } %>
+</div>
         </div>
       </form>
 
@@ -226,6 +244,28 @@
     org.value = u.organization || '';
     pos.value = u.position || '';
     role.value = (u.role === 'admin') ? 'admin' : 'user';
+    active.checked
+
+    const isis = document.getElementById('mIsISAdmin');
+    if (isis) {
+      isis.checked = (u.is_is_admin === true);
+      // ИС админ актуален только для роли admin
+      isis.disabled = (role.value !== 'admin');
+    }
+
+    if (!role.dataset.isisBound) {
+      role.addEventListener('change', () => {
+        if (!isis) return;
+        if (role.value !== 'admin') {
+          isis.checked = false;
+          isis.disabled = true;
+        } else {
+          isis.disabled = false;
+        }
+      });
+      role.dataset.isisBound = '1';
+    }
+
     active.checked = (u.is_active !== false);
 
     // PIN

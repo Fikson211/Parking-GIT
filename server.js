@@ -121,7 +121,6 @@ function toMapById(rows) {
   return out;
 }
 
-
 const MOSCOW_TZ = 'Europe/Moscow';
 
 // Форматирование времени строго в МСК, независимо от таймзоны сервера
@@ -189,7 +188,6 @@ function ruTargetType(t) {
   const k = String(t || '').trim();
   return RU_TARGET_TYPE[k] || k;
 }
-
 
 async function gatewayOpen({ deviceId, action = 'open' }) {
   if (!GATEWAY_BASE_URL || !GATEWAY_KEY) {
@@ -347,10 +345,11 @@ async function loadAll() {
       position: u.position,
       pin: u.pin,
       role: u.role || 'user',
-      is_is_admin: !!u.is_is_admin,
+      is_is_admin: u.is_is_admin === true,
       zones: Array.isArray(u.zones) ? u.zones : [],
       is_active: u.is_active !== false,
     }))),
+
     zones: toMapById(zones.rows.map((z) => ({ id: z.id, name: z.name, sort: z.sort ?? 0 }))),
     devices: toMapById(devices.rows.map((d) => ({
       id: d.id,
@@ -546,17 +545,6 @@ function authRequired(req, res, next) {
   next();
 }
 
-
-function isISAdminUser(u) {
-  return !!u && (u.role === 'admin') && (u.is_is_admin === true || u.is_is_admin === 'true' || u.is_is_admin === 1);
-}
-
-function isISAdminRequired(req, res, next) {
-  if (!req.session?.user) return res.redirect('/login');
-  if (!isISAdminUser(req.session.user)) return res.redirect('/admin/users');
-  next();
-}
-
 function adminRequired(req, res, next) {
   if (!req.session?.user) return res.redirect('/login');
   // Для обычных пользователей закрываем всё, кроме Дашборда.
@@ -564,6 +552,18 @@ function adminRequired(req, res, next) {
   if (req.session.user.role !== 'admin') return res.redirect('/');
   next();
 }
+
+
+function isISAdmin(user) {
+  return !!(user && (user.role || '') === 'admin' && user.is_is_admin === true);
+}
+
+function isISAdminRequired(req, res, next) {
+  if (!req.session?.user) return res.redirect('/login');
+  if (!isISAdmin(req.session.user)) return res.redirect('/admin/users');
+  next();
+}
+
 
 // --- health ---
 app.get('/health', async (req, res) => {
@@ -614,7 +614,7 @@ app.post('/login', async (req, res) => {
       organization: u.organization,
       position: u.position,
       role: u.role || 'user',
-      is_is_admin: !!u.is_is_admin,
+      is_is_admin: u.is_is_admin === true,
       zones: Array.isArray(u.zones) ? u.zones : [],
     };
 
@@ -729,8 +729,6 @@ app.post('/api/open/:deviceId', authRequired, async (req, res) => {
 });
 
 
-// --- logs ---
-// Журнал транзита доступен только администратору
 // --- logs ---
 // Журнал транзита доступен только администратору
 app.get('/logs', adminRequired, async (req, res) => {
@@ -867,8 +865,6 @@ app.get('/logs.csv', adminRequired, async (req, res) => {
 });
 
 
-
-
 app.post('/logs/clear', adminRequired, async (req, res) => {
   try {
     await dbQuery('TRUNCATE TABLE public.transit_events');
@@ -904,11 +900,11 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const phone = digitsOnly(req.body.phone);
   const organization = String(req.body.organization || '').trim();
   const position = String(req.body.position || '').trim();
-  const requestedRole = String(req.body.role || 'user');
-  const actorIsIS = isISAdminUser(req.session.user);
-  const role = (requestedRole === 'admin' || requestedRole === 'is_admin') ? 'admin' : 'user';
-  const is_is_admin = (requestedRole === 'is_admin' && actorIsIS) ? true : false;
-  const zones = parseZonesInput(req.body.zones);
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
+
+  const canIS = isISAdmin(req.session.user);
+  const zones = canIS ? parseZonesInput(req.body.zones) : [];
+  const is_is_admin = canIS && role === 'admin' && (req.body.is_is_admin === 'on' || req.body.is_is_admin === 'true');
 
   // PIN: можно задать вручную (как пароль), либо автоген
   const pinFromForm = digitsOnly(req.body.pin);
@@ -930,25 +926,31 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
   const phone = digitsOnly(req.body.phone);
   const organization = String(req.body.organization || '').trim();
   const position = String(req.body.position || '').trim();
-  const requestedRole = String(req.body.role || 'user');
-  const actorIsIS = isISAdminUser(req.session.user);
-  const role = (requestedRole === 'admin' || requestedRole === 'is_admin') ? 'admin' : 'user';
-  const is_is_admin = (requestedRole === 'is_admin' && actorIsIS) ? true : false;
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
-  const zones = parseZonesInput(req.body.zones);
+
+  const canIS = isISAdmin(req.session.user);
+  const zones = canIS ? parseZonesInput(req.body.zones) : null; // null = не менять
+  const is_is_admin = canIS
+    ? (role === 'admin' && (req.body.is_is_admin === 'on' || req.body.is_is_admin === 'true'))
+    : null; // null = не менять
+
   const pinFromForm = digitsOnly(req.body.pin);
   const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : null;
 
   await dbQuery(
     `UPDATE public.users
-     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6, is_is_admin=$7, zones=$8, is_active=$9,
+     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6,
+         is_is_admin = COALESCE($7, is_is_admin),
+         zones = COALESCE($8, zones),
+         is_active=$9,
          pin = COALESCE($10, pin),
          updated_at = NOW()
      WHERE id=$1`,
     [id, fio || null, phone, organization || null, position || null, role, is_is_admin, zones, isActive, pin]
   );
 
-  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, is_is_admin, zones, isActive, pin_changed: !!pin });
+  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, is_is_admin_changed: canIS ? (is_is_admin !== null) : false, zones_changed: canIS ? (zones !== null) : false, isActive, pin_changed: !!pin });
   res.redirect('/admin/users');
 });
 
@@ -1138,7 +1140,6 @@ app.get('/admin/audit.csv', adminRequired, async (req, res) => {
   res.send('\ufeff' + lines.join('\n'));
 });
 
-
 // Clear audit log
 app.post('/admin/audit/clear', adminRequired, async (req, res) => {
   await dbQuery('DELETE FROM public.audit');
@@ -1155,14 +1156,18 @@ async function ensureDefaultAdmin() {
     [adminPhone]
   );
 
-  if (exists.rows.length) return;
+  if (exists.rows.length) {
+    // гарантируем, что главный админ — ИС админ
+    await dbQuery(`UPDATE public.users SET is_is_admin = TRUE WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1 AND role='admin'`, [adminPhone]);
+    return;
+  }
 
   const id = 'admin';
   const fio = process.env.ADMIN_FIO || 'Администратор';
   // если зон ещё нет — оставляем пусто, можно назначить в админке
   await dbQuery(
     `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,'admin',$7,true)
+     VALUES ($1,$2,$3,$4,$5,$6,'admin',true,$7,true)
      ON CONFLICT (id) DO NOTHING`,
     [id, fio, adminPhone, null, null, adminPin, []]
   );
