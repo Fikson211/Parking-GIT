@@ -395,6 +395,15 @@
     }
     .d-none{ display:none!important; }
 
+  
+    /* UI fixes: action buttons spacing + logs top buttons offset */
+    .action-buttons{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+    .action-buttons form{ margin:0; }
+    .logs-top-actions{ margin-top: 10px; }
+    @media (max-width: 576px){
+      .logs-top-actions{ width:100%; justify-content:flex-start; }
+    }
+
   </style>
 </head>
 <body class="bg <%= _bodyClass %>">
