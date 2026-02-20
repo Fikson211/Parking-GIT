@@ -333,7 +333,7 @@ async function appendAudit(req, action, targetType, targetId, details) {
 async function loadAll() {
   // Важно: никаких ORDER BY sort если колонки нет — ensureSchema её добавит.
   const [users, zones, devices] = await Promise.all([
-    dbQuery(`SELECT id,fio,phone,organization,position,pin,role,zones,is_active FROM public.users ORDER BY created_at ASC`),
+    dbQuery(`SELECT id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active FROM public.users ORDER BY created_at ASC`),
     dbQuery(`SELECT id,name,sort FROM public.zones ORDER BY sort ASC, name ASC`),
     dbQuery(`SELECT id,name,zone_id,type,method,url,ip,relay,enabled,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
   ]);
@@ -347,6 +347,7 @@ async function loadAll() {
       position: u.position,
       pin: u.pin,
       role: u.role || 'user',
+      is_is_admin: !!u.is_is_admin,
       zones: Array.isArray(u.zones) ? u.zones : [],
       is_active: u.is_active !== false,
     }))),
@@ -545,6 +546,17 @@ function authRequired(req, res, next) {
   next();
 }
 
+
+function isISAdminUser(u) {
+  return !!u && (u.role === 'admin') && (u.is_is_admin === true || u.is_is_admin === 'true' || u.is_is_admin === 1);
+}
+
+function isISAdminRequired(req, res, next) {
+  if (!req.session?.user) return res.redirect('/login');
+  if (!isISAdminUser(req.session.user)) return res.redirect('/admin/users');
+  next();
+}
+
 function adminRequired(req, res, next) {
   if (!req.session?.user) return res.redirect('/login');
   // Для обычных пользователей закрываем всё, кроме Дашборда.
@@ -578,7 +590,7 @@ app.post('/login', async (req, res) => {
 
   try {
     const r = await dbQuery(
-      `SELECT id,fio,phone,organization,position,pin,role,zones,is_active
+      `SELECT id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active
        FROM public.users
        WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1
        LIMIT 1`,
@@ -602,6 +614,7 @@ app.post('/login', async (req, res) => {
       organization: u.organization,
       position: u.position,
       role: u.role || 'user',
+      is_is_admin: !!u.is_is_admin,
       zones: Array.isArray(u.zones) ? u.zones : [],
     };
 
@@ -891,7 +904,10 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const phone = digitsOnly(req.body.phone);
   const organization = String(req.body.organization || '').trim();
   const position = String(req.body.position || '').trim();
-  const role = req.body.role === 'admin' ? 'admin' : 'user';
+  const requestedRole = String(req.body.role || 'user');
+  const actorIsIS = isISAdminUser(req.session.user);
+  const role = (requestedRole === 'admin' || requestedRole === 'is_admin') ? 'admin' : 'user';
+  const is_is_admin = (requestedRole === 'is_admin' && actorIsIS) ? true : false;
   const zones = parseZonesInput(req.body.zones);
 
   // PIN: можно задать вручную (как пароль), либо автоген
@@ -899,12 +915,12 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : genPin(4);
 
   await dbQuery(
-    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,zones,is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true)`,
-    [id, fio || null, phone, organization || null, position || null, pin, role, zones]
+    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)`,
+    [id, fio || null, phone, organization || null, position || null, pin, role, is_is_admin, zones]
   );
 
-  await appendAudit(req, 'create', 'user', id, { fio, phone, organization, position, role, zones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
+  await appendAudit(req, 'create', 'user', id, { fio, phone, organization, position, role, is_is_admin, zones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
   res.redirect('/admin/users');
 });
 
@@ -914,7 +930,10 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
   const phone = digitsOnly(req.body.phone);
   const organization = String(req.body.organization || '').trim();
   const position = String(req.body.position || '').trim();
-  const role = req.body.role === 'admin' ? 'admin' : 'user';
+  const requestedRole = String(req.body.role || 'user');
+  const actorIsIS = isISAdminUser(req.session.user);
+  const role = (requestedRole === 'admin' || requestedRole === 'is_admin') ? 'admin' : 'user';
+  const is_is_admin = (requestedRole === 'is_admin' && actorIsIS) ? true : false;
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
   const zones = parseZonesInput(req.body.zones);
   const pinFromForm = digitsOnly(req.body.pin);
@@ -922,14 +941,14 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
 
   await dbQuery(
     `UPDATE public.users
-     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6, zones=$7, is_active=$8,
-         pin = COALESCE($9, pin),
+     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6, is_is_admin=$7, zones=$8, is_active=$9,
+         pin = COALESCE($10, pin),
          updated_at = NOW()
      WHERE id=$1`,
-    [id, fio || null, phone, organization || null, position || null, role, zones, isActive, pin]
+    [id, fio || null, phone, organization || null, position || null, role, is_is_admin, zones, isActive, pin]
   );
 
-  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, zones, isActive, pin_changed: !!pin });
+  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, is_is_admin, zones, isActive, pin_changed: !!pin });
   res.redirect('/admin/users');
 });
 
@@ -941,7 +960,7 @@ app.post('/admin/users/:id/reset_pin', adminRequired, async (req, res) => {
   res.redirect('/admin/users');
 });
 
-app.get('/admin/devices', adminRequired, async (req, res) => {
+app.get('/admin/devices', isISAdminRequired, async (req, res) => {
   const { devices, zones } = await loadAll();
   res.render('admin_devices', {
     title: 'Админ • Устройства',
@@ -952,7 +971,7 @@ app.get('/admin/devices', adminRequired, async (req, res) => {
   });
 });
 
-app.post('/admin/devices/create', adminRequired, async (req, res) => {
+app.post('/admin/devices/create', isISAdminRequired, async (req, res) => {
   const id = String(req.body.id || '').trim() || crypto.randomUUID();
   const name = String(req.body.name || '').trim();
   const zoneId = String(req.body.zoneId || '').trim();
@@ -972,7 +991,7 @@ app.post('/admin/devices/create', adminRequired, async (req, res) => {
   res.redirect('/admin/devices');
 });
 
-app.post('/admin/devices/:id/update', adminRequired, async (req, res) => {
+app.post('/admin/devices/:id/update', isISAdminRequired, async (req, res) => {
   const id = String(req.params.id);
   const name = String(req.body.name || '').trim();
   const zoneId = String(req.body.zoneId || '').trim();
@@ -993,7 +1012,7 @@ app.post('/admin/devices/:id/update', adminRequired, async (req, res) => {
   res.redirect('/admin/devices');
 });
 
-app.get('/admin/zones', adminRequired, async (req, res) => {
+app.get('/admin/zones', isISAdminRequired, async (req, res) => {
   const { zones, devices } = await loadAll();
 
   // group devices by zone_id for удобного отображения в админке
@@ -1016,7 +1035,7 @@ app.get('/admin/zones', adminRequired, async (req, res) => {
   });
 });
 
-app.post('/admin/zones/create', adminRequired, async (req, res) => {
+app.post('/admin/zones/create', isISAdminRequired, async (req, res) => {
   const id = String(req.body.id || '').trim() || crypto.randomUUID();
   const name = String(req.body.name || '').trim();
   await dbQuery(
@@ -1142,7 +1161,7 @@ async function ensureDefaultAdmin() {
   const fio = process.env.ADMIN_FIO || 'Администратор';
   // если зон ещё нет — оставляем пусто, можно назначить в админке
   await dbQuery(
-    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,zones,is_active)
+    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active)
      VALUES ($1,$2,$3,$4,$5,$6,'admin',$7,true)
      ON CONFLICT (id) DO NOTHING`,
     [id, fio, adminPhone, null, null, adminPin, []]

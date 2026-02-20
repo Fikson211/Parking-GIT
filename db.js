@@ -26,7 +26,8 @@ async function ensureSchema() {
       phone TEXT,
       pin TEXT,
       role TEXT DEFAULT 'user',
-            organization TEXT,
+                  is_is_admin BOOLEAN DEFAULT FALSE,
+organization TEXT,
       position TEXT,
 zones TEXT[] NOT NULL DEFAULT '{}'::text[],
       is_active BOOLEAN DEFAULT TRUE,
@@ -127,6 +128,7 @@ zones TEXT[] NOT NULL DEFAULT '{}'::text[],
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS pin TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT;`);
+  await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_is_admin BOOLEAN;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS organization TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS position TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS zones TEXT[];`);
@@ -167,6 +169,11 @@ zones TEXT[] NOT NULL DEFAULT '{}'::text[],
   }
 
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN role SET DEFAULT 'user';`);
+  await dbQuery(`ALTER TABLE public.users ALTER COLUMN is_is_admin SET DEFAULT FALSE;`);
+
+  // back-compat: existing admins used to have full access (devices/zones). Give them IS-admin flag on first migration.
+  await dbQuery(`UPDATE public.users SET is_is_admin = TRUE WHERE role='admin' AND is_is_admin IS NULL;`);
+
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN zones SET DEFAULT '{}'::text[];`);
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN is_active SET DEFAULT TRUE;`);
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN created_at SET DEFAULT NOW();`);

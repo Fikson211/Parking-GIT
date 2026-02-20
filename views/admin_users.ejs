@@ -7,8 +7,10 @@
       <div class="text-muted small">Минималистичный список + карточка редактирования. PIN можно посмотреть и поменять.</div>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center page-actions">
+      <% if (user && user.is_is_admin) { %>
       <a class="btn btn-soft" href="/admin/devices">Устройства</a>
       <a class="btn btn-soft" href="/admin/zones">Зоны</a>
+      <% } %>
       <a class="btn btn-soft" href="/admin/audit">Аудит</a>
     </div>
   </div>
@@ -34,8 +36,11 @@
     </div>
     <div class="col-12 col-md-1">
       <select name="role" class="form-select">
-        <option value="user">user</option>
-        <option value="admin">admin</option>
+        <option value="user">Пользователь</option>
+        <option value="admin">Админ</option>
+        <% if (user && user.is_is_admin) { %>
+          <option value="is_admin">ИС админ</option>
+        <% } %>
       </select>
     </div>
     <div class="col-12">
@@ -66,7 +71,7 @@
           </div>
         </div>
         <div class="d-flex gap-1 flex-wrap align-items-center" style="justify-content:flex-end;">
-          <span class="badge-soft"><%= (u.role === 'admin') ? 'admin' : 'user' %></span>
+          <span class="badge-soft"><%= (u.role === 'admin' && u.is_is_admin) ? 'ИС админ' : ((u.role === 'admin') ? 'админ' : 'пользователь') %></span>
           <span class="badge-soft"><%= (u.is_active !== false) ? 'active' : 'off' %></span>
           <span class="badge-soft"><%= Array.isArray(u.zones) ? u.zones.length : 0 %> зон</span>
         </div>
@@ -122,8 +127,11 @@
           <div>
             <label class="form-label">Роль</label>
             <select name="role" class="form-select" id="mRole">
-              <option value="user">user</option>
-              <option value="admin">admin</option>
+              <option value="user">Пользователь</option>
+              <option value="admin">Админ</option>
+              <% if (user && user.is_is_admin) { %>
+                <option value="is_admin">ИС админ</option>
+              <% } %>
             </select>
           </div>
 
