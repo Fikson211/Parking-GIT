@@ -419,9 +419,9 @@
         <% if ((_user.role || '') === 'admin') { %>
           <a class="tab <%= _path.startsWith('/logs') ? 'active' : '' %>" href="/logs">Журнал транзита</a>
           <a class="tab <%= _path.startsWith('/admin/users') ? 'active' : '' %>" href="/admin/users">Пользователи</a>
-          <% if (_user.is_is_admin) { %>
-          <a class="tab <%= _path.startsWith('/admin/devices') ? 'active' : '' %>" href="/admin/devices">Устройства</a>
-          <a class="tab <%= _path.startsWith('/admin/zones') ? 'active' : '' %>" href="/admin/zones">Зоны</a>
+          <% if (_user && _user.is_is_admin) { %>
+            <a class="tab <%= _path.startsWith('/admin/devices') ? 'active' : '' %>" href="/admin/devices">Устройства</a>
+            <a class="tab <%= _path.startsWith('/admin/zones') ? 'active' : '' %>" href="/admin/zones">Зоны</a>
           <% } %>
           <a class="tab <%= _path.startsWith('/admin/audit') ? 'active' : '' %>" href="/admin/audit">Аудит</a>
         <% } %>

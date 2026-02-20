@@ -7,8 +7,10 @@
       <div class="text-muted small">Минималистичный список + карточка редактирования. PIN можно посмотреть и поменять.</div>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center page-actions">
-      <a class="btn btn-soft" href="/admin/devices">Устройства</a>
-      <a class="btn btn-soft" href="/admin/zones">Зоны</a>
+      <% if (user && user.is_is_admin) { %>
+        <a class="btn btn-soft" href="/admin/devices">Устройства</a>
+        <a class="btn btn-soft" href="/admin/zones">Зоны</a>
+      <% } %>
       <a class="btn btn-soft" href="/admin/audit">Аудит</a>
     </div>
   </div>
@@ -38,17 +40,14 @@
         <option value="admin">admin</option>
       </select>
     </div>
-
     <% if (user && user.is_is_admin) { %>
-    <div class="col-12 col-md-2">
-      <div class="form-check mt-4">
-        <input class="form-check-input" type="checkbox" id="cIsISAdmin" name="is_is_admin">
-        <label class="form-check-label" for="cIsISAdmin">ИС админ</label>
-      </div>
-      <div class="small text-muted">Даст доступ к «Устройствам» и «Зонам»</div>
+    <div class="col-12 col-md-2 d-flex align-items-center">
+      <label class="form-check mb-0">
+        <input class="form-check-input me-1" type="checkbox" name="is_is_admin" value="true">
+        <span class="form-check-label">ИС админ</span>
+      </label>
     </div>
     <% } %>
-
     <div class="col-12">
       <button class="btn btn-gold w-100" type="submit">Создать</button>
     </div>
@@ -138,19 +137,8 @@
             </select>
           </div>
 
-          <% if (user && user.is_is_admin) { %>
           <div>
-            <label class="form-label">ИС админ</label>
-            <div class="form-check form-switch" style="align-items:center;">
-              <input class="form-check-input" type="checkbox" id="mIsISAdmin" name="is_is_admin">
-              <span class="text-muted small">доступ к «Устройствам» и «Зонам»</span>
-            </div>
-          </div>
-          <% } %>
-
-
-          <div>
-            <label class=\"form-label\">Активен</label>
+            <label class="form-label">Активен</label>
             <div class="form-check form-switch" style="align-items:center;">
               <input class="form-check-input" type="checkbox" id="mActive" name="is_active">
               <span class="text-muted small">вкл/выкл</span>
@@ -169,8 +157,7 @@
             </div>
           </div>
 
-          <% if (user && user.is_is_admin) { %>
-<div style="grid-column: 1 / -1;">
+          <div style="grid-column: 1 / -1;">
             <label class="form-label">Зоны доступа</label>
             <div class="d-flex flex-wrap gap-1" id="mZones">
               <% (zones || []).forEach(z => { %>
@@ -180,19 +167,18 @@
                 </label>
               <% }) %>
             </div>
-          <% } else { %>
-<div style=\"grid-column: 1 / -1;\" class=\"text-muted small\">Зоны доступа назначает ИС админ.</div>
-<% } %>
-</div>
+          </div>
         </div>
       </form>
 
       <form id="userResetForm" method="post" action=""></form>
+      <form id="userDeleteForm" method="post" action=""></form>
     </div>
 
     <div class="modal-footer">
       <button class="btn btn-soft" type="button" id="mCancel">Отмена</button>
       <button class="btn btn-gold" type="submit" form="userResetForm">Сброс PIN</button>
+      <button class="btn btn-danger" type="submit" form="userDeleteForm" id="mDelete">Удалить</button>
       <button class="btn btn-primary" type="submit" form="userUpdateForm">Сохранить</button>
     </div>
   </div>
@@ -221,6 +207,7 @@
 
   const updateForm = document.getElementById('userUpdateForm');
   const resetForm = document.getElementById('userResetForm');
+  const deleteForm = document.getElementById('userDeleteForm');
 
   function digitsOnly(v){
     return String(v || '').replace(/\D/g, '');
@@ -237,6 +224,7 @@
     // forms actions
     updateForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/update';
     resetForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/reset_pin';
+    deleteForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/delete';
 
     // fields
     fio.value = u.fio || '';
@@ -244,28 +232,6 @@
     org.value = u.organization || '';
     pos.value = u.position || '';
     role.value = (u.role === 'admin') ? 'admin' : 'user';
-    active.checked
-
-    const isis = document.getElementById('mIsISAdmin');
-    if (isis) {
-      isis.checked = (u.is_is_admin === true);
-      // ИС админ актуален только для роли admin
-      isis.disabled = (role.value !== 'admin');
-    }
-
-    if (!role.dataset.isisBound) {
-      role.addEventListener('change', () => {
-        if (!isis) return;
-        if (role.value !== 'admin') {
-          isis.checked = false;
-          isis.disabled = true;
-        } else {
-          isis.disabled = false;
-        }
-      });
-      role.dataset.isisBound = '1';
-    }
-
     active.checked = (u.is_active !== false);
 
     // PIN
@@ -314,6 +280,11 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal?.classList.contains('open')) closeModal();
+  });
+
+  // Delete confirmation
+  deleteForm?.addEventListener('submit', (e) => {
+    if (!confirm('Удалить пользователя? Действие необратимо.')) e.preventDefault();
   });
 
   // Search filter

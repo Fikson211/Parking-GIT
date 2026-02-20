@@ -35,6 +35,7 @@
           <th>ID</th>
           <th>Название</th>
           <th>Устройства</th>
+          <th class="text-end">Действия</th>
         </tr>
       </thead>
       <tbody>
@@ -54,6 +55,11 @@
             <% } else { %>
               <span class="text-muted">—</span>
             <% } %>
+          </td>
+          <td class="text-end">
+            <form method="post" action="/admin/zones/<%= z.id %>/delete" onsubmit="return confirm('Удалить зону?');" style="display:inline">
+              <button class="btn btn-danger btn-sm" type="submit">Удалить</button>
+            </form>
           </td>
         </tr>
       <% }) %>
