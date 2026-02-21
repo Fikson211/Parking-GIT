@@ -404,6 +404,60 @@
       .logs-top-actions{ width:100%; justify-content:flex-start; }
     }
 
+  
+    /* === Readability fixes for admin/logs tabs and dropdowns === */
+    body.admin-page,
+    body.logs-page,
+    body.admin-audit-page{
+      background:
+        radial-gradient(900px 520px at 12% -12%, rgba(67,97,238,.10), transparent 68%),
+        radial-gradient(900px 520px at 88% 112%, rgba(72,149,239,.09), transparent 68%),
+        linear-gradient(180deg, #050914 0%, #060d1b 52%, #07101f 100%);
+    }
+    body.admin-page::before,
+    body.logs-page::before,
+    body.admin-audit-page::before,
+    body.admin-page::after,
+    body.logs-page::after,
+    body.admin-audit-page::after{
+      opacity:.28;
+      filter: blur(95px);
+    }
+    body.admin-page .card,
+    body.logs-page .card,
+    body.admin-audit-page .card,
+    body.admin-page .table-wrap,
+    body.logs-page .table-wrap,
+    body.admin-audit-page .table-wrap{
+      background: rgba(10, 16, 31, .82);
+      border-color: rgba(255,255,255,.10);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    body.admin-page .page-title,
+    body.logs-page .page-title,
+    body.admin-audit-page .page-title{
+      text-shadow: 0 1px 0 rgba(0,0,0,.35);
+    }
+    /* Список в выпадающих select (Windows/Chrome) */
+    body.admin-page select,
+    body.logs-page select,
+    body.admin-audit-page select{
+      color-scheme: dark;
+    }
+    body.admin-page select option,
+    body.logs-page select option,
+    body.admin-audit-page select option{
+      color: #eaf2ff !important;
+      background: #0d1426 !important;
+    }
+    body.admin-page select optgroup,
+    body.logs-page select optgroup,
+    body.admin-audit-page select optgroup{
+      color: #b6c7e4 !important;
+      background: #0a1120 !important;
+    }
+
   </style>
 </head>
 <body class="bg <%= _bodyClass %>">
