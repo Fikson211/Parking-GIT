@@ -22,31 +22,69 @@
     <div class="muted">У вас пока нет назначенных зон/устройств. Попросите админа добавить доступ.</div>
   </div>
 <% } else { %>
-  <div class="card">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-      <div>
-        <h2 class="h6 mb-0">Зоны</h2>
-        <div class="text-muted small">Нажмите на зону, чтобы увидеть устройства</div>
+  <div class="row" style="gap:12px; align-items:stretch;">
+    <div class="field" style="flex:1 1 320px; min-width:260px;">
+      <div class="card dashboard-action-card" id="openZonesSheetCard" role="button" tabindex="0">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <div>
+            <h2 class="h6 mb-0">Зоны</h2>
+            <div class="text-muted small">Открыть список зон в боковой шторке</div>
+          </div>
+          <button class="btn btn-soft btn-sm" type="button" id="openZonesSheetBtn">Открыть</button>
+        </div>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="text-muted small" id="zonesCountLabel"><%= _byZone.length %> шт.</div>
+          <div class="text-muted small" id="selectedZoneLabel">Зона не выбрана</div>
+        </div>
       </div>
-      <div class="text-muted small"><%= _byZone.length %> шт.</div>
     </div>
 
-    <div class="zone-grid" id="zoneGrid">
-      <% _byZone.forEach((z, idx) => { %>
-        <button type="button" class="zone-tile" data-zone-index="<%= idx %>">
-          <div class="zone-title"><%= z.zoneName %></div>
-          <div class="zone-sub text-mono"><%= z.zoneId %></div>
-          <div class="zone-meta">
-            <span class="badge-soft"><%= (z.devices || []).length %> устройств</span>
+    <div class="field" style="flex:1 1 320px; min-width:260px;">
+      <div class="card dashboard-action-card" id="openDevicesSheetCard" role="button" tabindex="0">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <div>
+            <h2 class="h6 mb-0">Устройства</h2>
+            <div class="text-muted small">Устройства выбранной зоны открываются в шторке</div>
           </div>
-        </button>
-      <% }) %>
+          <button class="btn btn-soft btn-sm" type="button" id="openDevicesSheetBtn">Открыть</button>
+        </div>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="text-muted small" id="devicesCountLabel">Сначала выберите зону</div>
+          <div class="text-muted small">Без прокрутки страницы</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="card" id="devicesPanel" style="display:none;">
-    <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
-      <div style="min-width:240px;">
+  <div class="sheet-backdrop" id="dashboardSheetBackdrop" hidden></div>
+
+  <aside class="dashboard-sheet" id="zonesSheet" aria-hidden="true">
+    <div class="dashboard-sheet__head">
+      <div>
+        <div class="text-muted small">Доступные зоны</div>
+        <h2 class="h6 mb-0">Зоны</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-sheet>Закрыть</button>
+    </div>
+    <div class="dashboard-sheet__body">
+      <div class="text-muted small" style="margin-bottom:8px;">Нажмите на зону, чтобы открыть список устройств</div>
+      <div class="zone-grid" id="zoneGrid">
+        <% _byZone.forEach((z, idx) => { %>
+          <button type="button" class="zone-tile" data-zone-index="<%= idx %>">
+            <div class="zone-title"><%= z.zoneName %></div>
+            <div class="zone-sub text-mono"><%= z.zoneId %></div>
+            <div class="zone-meta">
+              <span class="badge-soft"><%= (z.devices || []).length %> устройств</span>
+            </div>
+          </button>
+        <% }) %>
+      </div>
+    </div>
+  </aside>
+
+  <aside class="dashboard-sheet" id="devicesSheet" aria-hidden="true">
+    <div class="dashboard-sheet__head">
+      <div style="min-width:0;">
         <h2 class="h6 mb-0" id="devicesTitle">Устройства</h2>
         <div class="text-muted small text-mono" id="devicesSub"></div>
       </div>
@@ -54,16 +92,33 @@
         <button class="btn btn-ghost btn-sm" type="button" id="devicesClose">Скрыть</button>
       </div>
     </div>
-
-    <div class="spacer"></div>
-
-    <div class="device-grid" id="devicesGrid"></div>
-  </div>
-
-  <div class="card" id="devicesHint">
-    <div class="muted">Сначала выберите зону выше — устройства появятся ниже.</div>
-  </div>
-<% } %>
+    <div class="dashboard-sheet__body">
+      <div class="device-grid" id="devicesGrid"></div>
+      <div class="muted" id="devicesHint" style="margin-top:8px;">Сначала выберите зону в шторке «Зоны».</div>
+    </div>
+  </aside><% } %>
+<style>
+  .dashboard-action-card{ cursor:pointer; }
+  .dashboard-action-card:focus-visible{ outline:2px solid rgba(255,255,255,.28); outline-offset:2px; }
+  .sheet-backdrop{ position:fixed; inset:0; background:rgba(4,8,20,.55); backdrop-filter:blur(2px); z-index:90; opacity:0; transition:opacity .2s ease; }
+  .sheet-backdrop.show{ opacity:1; }
+  .dashboard-sheet{
+    position:fixed; top:16px; right:16px; bottom:16px; width:min(720px, calc(100vw - 24px));
+    background:linear-gradient(180deg, rgba(20,25,40,.98), rgba(8,12,26,.98));
+    border:1px solid rgba(255,255,255,.12); border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,.45);
+    z-index:95; display:flex; flex-direction:column; transform:translateX(calc(100% + 24px)); opacity:0;
+    transition:transform .24s ease, opacity .24s ease; pointer-events:none;
+  }
+  .dashboard-sheet.open{ transform:translateX(0); opacity:1; pointer-events:auto; }
+  .dashboard-sheet__head{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:14px 14px 10px; border-bottom:1px solid rgba(255,255,255,.08); }
+  .dashboard-sheet__body{ padding:12px 14px 14px; overflow:auto; }
+  body.sheet-open{ overflow:hidden; }
+  .dashboard-sheet .zone-grid{ margin-top:4px; }
+  @media (max-width: 700px){
+    .dashboard-sheet{ top:auto; left:8px; right:8px; bottom:8px; width:auto; max-height:85vh; transform:translateY(calc(100% + 16px)); }
+    .dashboard-sheet.open{ transform:translateY(0); }
+  }
+</style>
 
 <script>
   const BY_ZONE = <%- JSON.stringify(_byZone) %>;
@@ -90,14 +145,41 @@
     const zoneGrid = document.getElementById('zoneGrid');
     if (!zoneGrid) return;
 
-    const panel = document.getElementById('devicesPanel');
     const grid = document.getElementById('devicesGrid');
     const title = document.getElementById('devicesTitle');
     const sub = document.getElementById('devicesSub');
     const hint = document.getElementById('devicesHint');
+    const zonesSheet = document.getElementById('zonesSheet');
+    const devicesSheet = document.getElementById('devicesSheet');
+    const backdrop = document.getElementById('dashboardSheetBackdrop');
+    const selectedZoneLabel = document.getElementById('selectedZoneLabel');
+    const devicesCountLabel = document.getElementById('devicesCountLabel');
 
     function clearActive(){
       zoneGrid.querySelectorAll('.zone-tile').forEach(b=>b.classList.remove('active'));
+    }
+
+    function syncBackdrop(){
+      const anyOpen = (zonesSheet && zonesSheet.classList.contains('open')) || (devicesSheet && devicesSheet.classList.contains('open'));
+      if (backdrop){
+        backdrop.hidden = !anyOpen;
+        backdrop.classList.toggle('show', anyOpen);
+      }
+      document.body.classList.toggle('sheet-open', anyOpen);
+    }
+
+    function openSheet(name){
+      if (name === 'zones' && zonesSheet) zonesSheet.classList.add('open');
+      if (name === 'devices' && devicesSheet) devicesSheet.classList.add('open');
+      if (name === 'zones' && devicesSheet) devicesSheet.classList.remove('open');
+      if (name === 'devices' && zonesSheet) zonesSheet.classList.remove('open');
+      syncBackdrop();
+    }
+
+    function closeSheets(){
+      if (zonesSheet) zonesSheet.classList.remove('open');
+      if (devicesSheet) devicesSheet.classList.remove('open');
+      syncBackdrop();
     }
 
     function renderDevices(zoneIdx){
@@ -109,10 +191,11 @@
       if (activeBtn) activeBtn.classList.add('active');
 
       if (hint) hint.style.display = 'none';
-      if (panel) panel.style.display = '';
 
       if (title) title.textContent = z.zoneName || 'Устройства';
       if (sub) sub.textContent = z.zoneId || '';
+      if (selectedZoneLabel) selectedZoneLabel.textContent = z.zoneName || 'Зона выбрана';
+      if (devicesCountLabel) devicesCountLabel.textContent = `${(z.devices || []).length} устройств`;
 
       if (!grid) return;
       grid.innerHTML = '';
@@ -133,6 +216,8 @@
         `;
         grid.appendChild(btn);
       });
+
+      openSheet('devices');
     }
 
     function escapeHtml(s){
@@ -143,6 +228,25 @@
         .replaceAll('"','&quot;')
         .replaceAll("'",'&#39;');
     }
+
+    function bindOpen(el, target){
+      if (!el) return;
+      el.addEventListener('click', (e) => {
+        if (e.target.closest && e.target.closest('button') && e.target !== el) return;
+        openSheet(target);
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(target); }
+      });
+    }
+
+    bindOpen(document.getElementById('openZonesSheetCard'), 'zones');
+    bindOpen(document.getElementById('openDevicesSheetCard'), 'devices');
+    document.getElementById('openZonesSheetBtn')?.addEventListener('click', (e)=>{ e.stopPropagation(); openSheet('zones'); });
+    document.getElementById('openDevicesSheetBtn')?.addEventListener('click', (e)=>{ e.stopPropagation(); openSheet('devices'); });
+    document.querySelectorAll('[data-close-sheet]').forEach(b=>b.addEventListener('click', closeSheets));
+    if (backdrop) backdrop.addEventListener('click', closeSheets);
+    document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeSheets(); });
 
     zoneGrid.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-zone-index]');
@@ -161,12 +265,14 @@
     const close = document.getElementById('devicesClose');
     if (close){
       close.addEventListener('click', () => {
-        if (panel) panel.style.display = 'none';
         if (hint) hint.style.display = '';
         clearActive();
         if (grid) grid.innerHTML = '';
         if (title) title.textContent = 'Устройства';
         if (sub) sub.textContent = '';
+        if (selectedZoneLabel) selectedZoneLabel.textContent = 'Зона не выбрана';
+        if (devicesCountLabel) devicesCountLabel.textContent = 'Сначала выберите зону';
+        closeSheets();
       });
     }
   })();
