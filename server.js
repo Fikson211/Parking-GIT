@@ -108,6 +108,15 @@ function parseZonesInput(v) {
     .filter(Boolean);
 }
 
+function applyAdminUserZoneLimit(actor, zoneIds) {
+  const clean = Array.from(new Set(parseZonesInput(zoneIds)));
+  if (!actor || actor.role !== 'admin' || actor.is_is_admin === true) return clean;
+  // legacy admins: пока ИС-админ не задаст список, ограничение не применяется
+  if (actor.assignable_zones === undefined || actor.assignable_zones === null) return clean;
+  const allowed = new Set(parseZonesInput(actor.assignable_zones));
+  return clean.filter((z) => allowed.has(z));
+}
+
 function genPin(len = 4) {
   const n = crypto.randomInt(0, 10 ** len);
   return String(n).padStart(len, '0');
@@ -333,7 +342,7 @@ async function appendAudit(req, action, targetType, targetId, details) {
 async function loadAll() {
   // Важно: никаких ORDER BY sort если колонки нет — ensureSchema её добавит.
   const [users, zones, devices] = await Promise.all([
-    dbQuery(`SELECT id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active FROM public.users ORDER BY created_at ASC`),
+    dbQuery(`SELECT id,fio,phone,organization,position,pin,role,is_is_admin,zones,assignable_zones,is_active FROM public.users ORDER BY created_at ASC`),
     dbQuery(`SELECT id,name,sort FROM public.zones ORDER BY sort ASC, name ASC`),
     dbQuery(`SELECT id,name,zone_id,type,method,url,ip,relay,enabled,sort,is_active FROM public.devices ORDER BY sort ASC, name ASC`),
   ]);
@@ -348,6 +357,7 @@ async function loadAll() {
       pin: u.pin,
       role: u.role || 'user',
       zones: Array.isArray(u.zones) ? u.zones : [],
+      assignable_zones: u.assignable_zones == null ? null : (Array.isArray(u.assignable_zones) ? u.assignable_zones : []),
       is_active: u.is_active !== false,
     }))),
     zones: toMapById(zones.rows.map((z) => ({ id: z.id, name: z.name, sort: z.sort ?? 0 }))),
@@ -586,7 +596,7 @@ app.post('/login', async (req, res) => {
 
   try {
     const r = await dbQuery(
-      `SELECT id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active
+      `SELECT id,fio,phone,organization,position,pin,role,is_is_admin,zones,assignable_zones,is_active
        FROM public.users
        WHERE regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') = $1
        LIMIT 1`,
@@ -610,9 +620,10 @@ app.post('/login', async (req, res) => {
       organization: u.organization,
       position: u.position,
       role: u.role || 'user',
-      
       is_is_admin: !!u.is_is_admin,
-zones: Array.isArray(u.zones) ? u.zones : [],
+      zones: Array.isArray(u.zones) ? u.zones : [],
+      assignable_zones: u.assignable_zones == null ? null : (Array.isArray(u.assignable_zones) ? u.assignable_zones : []),
+      is_active: u.is_active !== false
     };
 
 	    await appendAudit(req, 'login', 'user', u.id, { phone: u.phone });
@@ -886,12 +897,19 @@ app.post('/logs/clear', adminRequired, async (req, res) => {
 // --- admin: users/devices/zones/audit ---
 app.get('/admin/users', adminRequired, async (req, res) => {
   const { users, zones } = await loadAll();
+  const allZones = Object.values(zones);
+  let userZoneOptions = allZones;
+  if (req.session.user?.role === 'admin' && !req.session.user?.is_is_admin && Array.isArray(req.session.user?.assignable_zones)) {
+    const allowed = new Set(req.session.user.assignable_zones.map((z) => String(z || '').trim()).filter(Boolean));
+    userZoneOptions = allZones.filter((z) => allowed.has(String(z.id || '').trim()));
+  }
   res.render('admin_users', {
     title: 'Админ • Пользователи',
     bodyClass: 'admin-page',
     user: req.session.user,
     users: Object.values(users),
-    zones: Object.values(zones),
+    zones: userZoneOptions,
+    allZones,
   });
 });
 
@@ -903,19 +921,21 @@ app.post('/admin/users/create', adminRequired, async (req, res) => {
   const position = String(req.body.position || '').trim();
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const isIsAdmin = (req.session.user?.is_is_admin) ? (req.body.is_is_admin === 'on' || req.body.is_is_admin === 'true') : false;
-  const zones = parseZonesInput(req.body.zones);
+  const zones = applyAdminUserZoneLimit(req.session.user, req.body.zones);
+  const assignableZonesRaw = parseZonesInput(req.body.assignable_zones);
+  const assignableZones = (req.session.user?.is_is_admin && role === 'admin' && !isIsAdmin) ? assignableZonesRaw : null;
 
   // PIN: можно задать вручную (как пароль), либо автоген
   const pinFromForm = digitsOnly(req.body.pin);
   const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : genPin(4);
 
   await dbQuery(
-    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,is_is_admin,zones,is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)`,
-    [id, fio || null, phone, organization || null, position || null, pin, role, isIsAdmin, zones]
+    `INSERT INTO public.users(id,fio,phone,organization,position,pin,role,is_is_admin,zones,assignable_zones,is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)`,
+    [id, fio || null, phone, organization || null, position || null, pin, role, isIsAdmin, zones, assignableZones]
   );
 
-  await appendAudit(req, 'create', 'user', id, { fio, phone, organization, position, role, is_is_admin: isIsAdmin, zones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
+  await appendAudit(req, 'create', 'user', id, { fio, phone, organization, position, role, is_is_admin: isIsAdmin, zones, assignable_zones: assignableZones, pin_set: !!pinFromForm, pin_generated: !pinFromForm });
   res.redirect('/admin/users');
 });
 
@@ -928,20 +948,44 @@ app.post('/admin/users/:id/update', adminRequired, async (req, res) => {
   const role = req.body.role === 'admin' ? 'admin' : 'user';
   const isIsAdmin = (req.session.user?.is_is_admin) ? (req.body.is_is_admin === 'on' || req.body.is_is_admin === 'true') : false;
   const isActive = req.body.is_active === 'on' || req.body.is_active === 'true';
-  const zones = parseZonesInput(req.body.zones);
+  const zones = applyAdminUserZoneLimit(req.session.user, req.body.zones);
+  const assignableZonesRaw = parseZonesInput(req.body.assignable_zones);
   const pinFromForm = digitsOnly(req.body.pin);
   const pin = (pinFromForm && pinFromForm.length >= 4) ? pinFromForm : null;
 
+  const targetRes = await dbQuery('SELECT id, is_is_admin, assignable_zones FROM public.users WHERE id=$1', [id]);
+  const target = targetRes.rows[0];
+  if (!target) return res.redirect('/admin/users');
+
+  let nextAssignableZones = target.assignable_zones == null ? null : (Array.isArray(target.assignable_zones) ? target.assignable_zones : []);
+  if (role !== 'admin' || target.is_is_admin === true) {
+    nextAssignableZones = null;
+  } else if (req.session.user?.is_is_admin) {
+    nextAssignableZones = assignableZonesRaw;
+  }
+
   await dbQuery(
     `UPDATE public.users
-     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6, zones=$7, is_active=$8,
-         pin = COALESCE($9, pin),
+     SET fio=$2, phone=$3, organization=$4, position=$5, role=$6, zones=$7, assignable_zones=$8, is_active=$9,
+         pin = COALESCE($10, pin),
          updated_at = NOW()
      WHERE id=$1`,
-    [id, fio || null, phone, organization || null, position || null, role, zones, isActive, pin]
+    [id, fio || null, phone, organization || null, position || null, role, zones, nextAssignableZones, isActive, pin]
   );
 
-  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, zones, isActive, pin_changed: !!pin });
+  await appendAudit(req, 'update', 'user', id, { fio, phone, organization, position, role, zones, assignable_zones: nextAssignableZones, isActive, pin_changed: !!pin });
+
+  if (req.session.user && String(req.session.user.id) === id) {
+    req.session.user.fio = fio || req.session.user.fio;
+    req.session.user.phone = phone || req.session.user.phone;
+    req.session.user.organization = organization;
+    req.session.user.position = position;
+    req.session.user.role = role;
+    req.session.user.zones = zones;
+    req.session.user.assignable_zones = req.session.user.is_is_admin ? null : nextAssignableZones;
+    req.session.user.is_active = isActive;
+  }
+
   res.redirect('/admin/users');
 });
 
@@ -962,11 +1006,12 @@ app.post('/admin/users/:id/delete', adminRequired, async (req, res) => {
     return res.redirect('/admin/users');
   }
 
-  // обычный админ не может удалять ИС-админа
-  const targetRes = await dbQuery(`SELECT is_is_admin FROM public.users WHERE id=$1 LIMIT 1`, [id]);
-  const target = targetRes.rows?.[0];
-  if (target && target.is_is_admin && !req.session?.is_is_admin) {
-    return res.status(403).send('Только ИС-админ может удалять ИС-админов');
+  const targetRes = await dbQuery('SELECT id, is_is_admin FROM public.users WHERE id=$1', [id]);
+  const target = targetRes.rows[0];
+  if (!target) return res.redirect('/admin/users');
+
+  if (!req.session.user?.is_is_admin && target.is_is_admin) {
+    return res.status(403).send('Обычный админ не может удалять ИС-админа');
   }
 
   await dbQuery(`DELETE FROM public.users WHERE id=$1`, [id]);

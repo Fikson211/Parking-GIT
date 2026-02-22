@@ -1,5 +1,8 @@
 <%- include('partials/header', { title, bodyClass, user, path: '/admin/users' }) %>
 
+<% const _allZones = Array.isArray(allZones) ? allZones : (Array.isArray(zones) ? zones : []); %>
+<% const _isISAdmin = !!(user && user.is_is_admin); %>
+
 <div class="mb-3">
   <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
     <div style="min-width:240px;">
@@ -48,6 +51,21 @@
       </label>
     </div>
     <% } %>
+    <% if (_isISAdmin) { %>
+    <div class="col-12">
+      <label class="form-label">Зоны, которые админ может назначать пользователям (для роли admin)</label>
+      <div class="d-flex flex-wrap gap-2">
+        <% _allZones.forEach(z => { %>
+          <label class="form-check form-check-inline badge-soft px-2 py-1">
+            <input class="form-check-input me-1" type="checkbox" name="assignable_zones" value="<%= z.id %>">
+            <span class="form-check-label"><%= z.name %></span>
+          </label>
+        <% }) %>
+      </div>
+      <div class="small text-muted">Работает для обычных админов. Для ИС-админа не применяется.</div>
+    </div>
+    <% } %>
+
     <div class="col-12">
       <button class="btn btn-gold w-100" type="submit">Создать</button>
     </div>
@@ -168,6 +186,21 @@
               <% }) %>
             </div>
           </div>
+
+          <% if (_isISAdmin) { %>
+          <div style="grid-column: 1 / -1;">
+            <label class="form-label">Зоны, которые админ может назначать пользователям (для роли admin)</label>
+            <div class="d-flex flex-wrap gap-1" id="mAssignableZones">
+              <% _allZones.forEach(z => { %>
+                <label class="zone-chip">
+                  <input class="form-check-input me-1" type="checkbox" name="assignable_zones" value="<%= z.id %>" data-assignable-zone-id="<%= z.id %>">
+                  <span><%= z.name %></span>
+                </label>
+              <% }) %>
+            </div>
+            <div class="small text-muted">Для ИС-админа не применяется.</div>
+          </div>
+          <% } %>
         </div>
       </form>
 
@@ -208,8 +241,6 @@
   const updateForm = document.getElementById('userUpdateForm');
   const resetForm = document.getElementById('userResetForm');
   const deleteForm = document.getElementById('userDeleteForm');
-  const deleteBtn = document.getElementById('mDelete');
-  const CURRENT_IS_IS_ADMIN = <%= (user && user.is_is_admin) ? 'true' : 'false' %>;
 
   function digitsOnly(v){
     return String(v || '').replace(/\D/g, '');
@@ -227,12 +258,6 @@
     updateForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/update';
     resetForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/reset_pin';
     deleteForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/delete';
-
-    // Обычный админ не может удалить ИС-админа
-    const canDeleteThisUser = CURRENT_IS_IS_ADMIN || !u.is_is_admin;
-    deleteBtn.disabled = !canDeleteThisUser;
-    deleteBtn.title = canDeleteThisUser ? '' : 'Только ИС-админ может удалить ИС-админа';
-    deleteBtn.textContent = canDeleteThisUser ? 'Удалить' : 'Удаление запрещено';
 
     // fields
     fio.value = u.fio || '';
@@ -253,6 +278,11 @@
     const assigned = Array.isArray(u.zones) ? u.zones.map(String) : [];
     document.querySelectorAll('#mZones [data-zone-id]').forEach(inp => {
       inp.checked = assigned.includes(String(inp.getAttribute('data-zone-id')));
+    });
+
+    const assignable = Array.isArray(u.assignable_zones) ? u.assignable_zones.map(String) : [];
+    document.querySelectorAll('#mAssignableZones [data-assignable-zone-id]').forEach(inp => {
+      inp.checked = assignable.includes(String(inp.getAttribute('data-assignable-zone-id')));
     });
 
     modal.classList.add('open');
