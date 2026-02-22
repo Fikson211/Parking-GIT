@@ -114,6 +114,12 @@
   .dashboard-sheet__body{ padding:12px 14px 14px; overflow:auto; }
   body.sheet-open{ overflow:hidden; }
   .dashboard-sheet .zone-grid{ margin-top:4px; }
+  .dashboard-sheet .device-btn{ justify-content:flex-start; text-align:left; width:100%; color:#eaf2ff !important;   background:linear-gradient(180deg, rgba(80,128,255,.20), rgba(80,128,255,.12)) !important;   border-color:rgba(110,160,255,.34) !important; }
+  .dashboard-sheet .device-btn:hover{ border-color:rgba(156,201,255,.36) !important; transform:translateY(-1px); }
+  .dashboard-sheet .device-btn:active{ transform:translateY(0); }
+  .dashboard-sheet .device-btn .muted{ color:rgba(234,242,255,.72) !important; }
+  html[data-theme="light"] .dashboard-sheet .device-btn{ color:rgba(17,24,39,.92) !important; background:rgba(255,255,255,.95) !important; border-color:rgba(32,82,255,.16) !important; box-shadow:0 8px 22px rgba(15,23,42,.08); }
+  html[data-theme="light"] .dashboard-sheet .device-btn .muted{ color:rgba(71,85,105,.9) !important; }
   @media (max-width: 700px){
     .dashboard-sheet{ top:auto; left:8px; right:8px; bottom:8px; width:auto; max-height:85vh; transform:translateY(calc(100% + 16px)); }
     .dashboard-sheet.open{ transform:translateY(0); }
