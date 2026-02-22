@@ -208,6 +208,8 @@
   const updateForm = document.getElementById('userUpdateForm');
   const resetForm = document.getElementById('userResetForm');
   const deleteForm = document.getElementById('userDeleteForm');
+  const deleteBtn = document.getElementById('mDelete');
+  const CURRENT_IS_IS_ADMIN = <%= (user && user.is_is_admin) ? 'true' : 'false' %>;
 
   function digitsOnly(v){
     return String(v || '').replace(/\D/g, '');
@@ -225,6 +227,12 @@
     updateForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/update';
     resetForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/reset_pin';
     deleteForm.action = '/admin/users/' + encodeURIComponent(u.id) + '/delete';
+
+    // Обычный админ не может удалить ИС-админа
+    const canDeleteThisUser = CURRENT_IS_IS_ADMIN || !u.is_is_admin;
+    deleteBtn.disabled = !canDeleteThisUser;
+    deleteBtn.title = canDeleteThisUser ? '' : 'Только ИС-админ может удалить ИС-админа';
+    deleteBtn.textContent = canDeleteThisUser ? 'Удалить' : 'Удаление запрещено';
 
     // fields
     fio.value = u.fio || '';

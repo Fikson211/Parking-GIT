@@ -962,6 +962,13 @@ app.post('/admin/users/:id/delete', adminRequired, async (req, res) => {
     return res.redirect('/admin/users');
   }
 
+  // обычный админ не может удалять ИС-админа
+  const targetRes = await dbQuery(`SELECT is_is_admin FROM public.users WHERE id=$1 LIMIT 1`, [id]);
+  const target = targetRes.rows?.[0];
+  if (target && target.is_is_admin && !req.session?.is_is_admin) {
+    return res.status(403).send('Только ИС-админ может удалять ИС-админов');
+  }
+
   await dbQuery(`DELETE FROM public.users WHERE id=$1`, [id]);
   await appendAudit(req, 'delete', 'user', id, {});
   res.redirect('/admin/users');
