@@ -118,6 +118,13 @@
   .dashboard-sheet .device-btn:hover{ border-color:rgba(156,201,255,.36) !important; transform:translateY(-1px); }
   .dashboard-sheet .device-btn:active{ transform:translateY(0); }
   .dashboard-sheet .device-btn .muted{ color:rgba(234,242,255,.72) !important; }
+  html[data-theme="light"] .sheet-backdrop{ background:rgba(15,23,42,.12); backdrop-filter:blur(2px); }
+  html[data-theme="light"] .dashboard-sheet{
+    background:linear-gradient(180deg, rgba(255,255,255,.985), rgba(246,250,255,.985));
+    border-color:rgba(15,23,42,.10);
+    box-shadow:0 20px 48px rgba(15,23,42,.18);
+  }
+  html[data-theme="light"] .dashboard-sheet__head{ border-bottom-color:rgba(15,23,42,.08); }
   html[data-theme="light"] .dashboard-sheet .device-btn{ color:rgba(17,24,39,.92) !important; background:rgba(255,255,255,.95) !important; border-color:rgba(32,82,255,.16) !important; box-shadow:0 8px 22px rgba(15,23,42,.08); }
   html[data-theme="light"] .dashboard-sheet .device-btn .muted{ color:rgba(71,85,105,.9) !important; }
   @media (max-width: 700px){
