@@ -30,6 +30,7 @@ async function ensureSchema() {
             organization TEXT,
       position TEXT,
 zones TEXT[] NOT NULL DEFAULT '{}'::text[],
+      assignable_zones TEXT[],
       is_active BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -132,6 +133,7 @@ zones TEXT[] NOT NULL DEFAULT '{}'::text[],
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS organization TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS position TEXT;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS zones TEXT[];`);
+  await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS assignable_zones TEXT[];`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_active BOOLEAN;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;`);
@@ -166,6 +168,37 @@ zones TEXT[] NOT NULL DEFAULT '{}'::text[],
     }
   } catch (e) {
     console.warn('⚠️ zones type check/migrate failed:', e?.message || e);
+  }
+
+  try {
+    const azt = await dbQuery(
+      `SELECT data_type, udt_name
+       FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='users' AND column_name='assignable_zones'
+       LIMIT 1`
+    );
+    if (azt.rows.length) {
+      const { data_type, udt_name } = azt.rows[0];
+      const isJsonb = data_type === 'jsonb' || udt_name === 'jsonb';
+      if (isJsonb) {
+        await dbQuery(`
+          ALTER TABLE public.users
+          ALTER COLUMN assignable_zones TYPE TEXT[]
+          USING (
+            CASE
+              WHEN assignable_zones IS NULL THEN NULL
+              WHEN jsonb_typeof(assignable_zones)='array' THEN (
+                SELECT COALESCE(array_agg(value), '{}'::text[])
+                FROM jsonb_array_elements_text(assignable_zones) AS t(value)
+              )
+              ELSE NULL
+            END
+          );
+        `);
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ assignable_zones type check/migrate failed:', e?.message || e);
   }
 
   await dbQuery(`ALTER TABLE public.users ALTER COLUMN role SET DEFAULT 'user';`);
